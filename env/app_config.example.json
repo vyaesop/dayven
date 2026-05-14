@@ -1,0 +1,6 @@
+{
+  "VP_BACKEND_MODE": "neon",
+  "VP_API_BASE_URL": "https://your-worker-domain.example.workers.dev",
+  "VP_API_BEARER_TOKEN": "",
+  "VP_ENABLE_VERBOSE_LOGS": false
+}
