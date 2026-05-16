@@ -48,6 +48,7 @@ class _MonthOverviewSheetState extends State<_MonthOverviewSheet> {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final accent = Theme.of(context).colorScheme.secondary;
     final monthDays = _buildMonthDays(_focusedMonth);
     final eventCountByDay = <int, int>{};
 
@@ -115,7 +116,7 @@ class _MonthOverviewSheetState extends State<_MonthOverviewSheet> {
                             DateFormat('MMMM').format(_focusedMonth).toUpperCase(),
                             textAlign: TextAlign.center,
                             style: textTheme.displayMedium?.copyWith(
-                              color: AppColors.gold,
+                              color: accent,
                               fontSize: 28,
                               letterSpacing: -0.5,
                             ),
@@ -356,6 +357,7 @@ class _MonthDayCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.secondary;
     Color? bgColor;
     Color textColor = Colors.white;
 
@@ -363,8 +365,8 @@ class _MonthDayCell extends StatelessWidget {
       bgColor = Colors.white;
       textColor = AppColors.charcoal;
     } else if (isToday) {
-      bgColor = AppColors.gold.withValues(alpha: 0.25);
-      textColor = AppColors.gold;
+      bgColor = accent.withValues(alpha: 0.25);
+      textColor = accent;
     } else if (eventCount > 0) {
       bgColor = _heatColor(eventCount);
     }
@@ -380,7 +382,7 @@ class _MonthDayCell extends StatelessWidget {
             color: bgColor,
             shape: BoxShape.circle,
             border: isToday && !isSelected
-                ? Border.all(color: AppColors.gold, width: 1.5)
+                ? Border.all(color: accent, width: 1.5)
                 : null,
           ),
           alignment: Alignment.center,

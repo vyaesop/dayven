@@ -10,6 +10,7 @@ class LocalAccountState {
     required this.selectedPlan,
     required this.trialStartedAt,
     required this.redeemedCodes,
+    required this.localPasscode,
   });
 
   factory LocalAccountState.defaults() {
@@ -21,6 +22,7 @@ class LocalAccountState {
       selectedPlan: 'Yearly',
       trialStartedAt: null,
       redeemedCodes: [],
+      localPasscode: '',
     );
   }
 
@@ -31,9 +33,11 @@ class LocalAccountState {
   final String selectedPlan;
   final DateTime? trialStartedAt;
   final List<String> redeemedCodes;
+  final String localPasscode;
 
   bool get hasPremiumPreview =>
       trialStartedAt != null || redeemedCodes.isNotEmpty;
+  bool get hasLocalPasscode => localPasscode.isNotEmpty;
 
   int get remainingTrialDays {
     final started = trialStartedAt;
@@ -73,6 +77,7 @@ class LocalAccountState {
     String? selectedPlan,
     DateTime? trialStartedAt,
     List<String>? redeemedCodes,
+    String? localPasscode,
     bool clearTrialStartedAt = false,
   }) {
     return LocalAccountState(
@@ -85,6 +90,7 @@ class LocalAccountState {
           ? null
           : trialStartedAt ?? this.trialStartedAt,
       redeemedCodes: redeemedCodes ?? this.redeemedCodes,
+      localPasscode: localPasscode ?? this.localPasscode,
     );
   }
 }
@@ -102,6 +108,7 @@ class LocalAccountController extends AsyncNotifier<LocalAccountState> {
   static const _selectedPlanKey = 'account_selected_plan';
   static const _trialStartedAtKey = 'account_trial_started_at';
   static const _redeemedCodesKey = 'account_redeemed_codes';
+  static const _localPasscodeKey = 'account_local_passcode';
 
   @override
   Future<LocalAccountState> build() async {
@@ -118,6 +125,8 @@ class LocalAccountController extends AsyncNotifier<LocalAccountState> {
       trialStartedAt: _parseDateTime(prefs.getString(_trialStartedAtKey)),
       redeemedCodes:
           prefs.getStringList(_redeemedCodesKey) ?? defaults.redeemedCodes,
+      localPasscode:
+          prefs.getString(_localPasscodeKey) ?? defaults.localPasscode,
     );
   }
 
@@ -125,6 +134,7 @@ class LocalAccountController extends AsyncNotifier<LocalAccountState> {
     required String displayName,
     required String email,
     required bool communicationOptIn,
+    String? localPasscode,
   }) {
     return _update(
       (current) => current.copyWith(
@@ -132,8 +142,50 @@ class LocalAccountController extends AsyncNotifier<LocalAccountState> {
         displayName: displayName.trim(),
         email: email.trim(),
         communicationOptIn: communicationOptIn,
+        localPasscode: localPasscode?.trim().isEmpty ?? true
+            ? current.localPasscode
+            : _hashLocalPasscode(email, localPasscode!),
       ),
     );
+  }
+
+  Future<bool> unlock({
+    required String email,
+    required String localPasscode,
+  }) async {
+    final current = state.asData?.value ?? LocalAccountState.defaults();
+    final emailMatches =
+        current.email.trim().toLowerCase() == email.trim().toLowerCase();
+    final passcodeMatches =
+        current.localPasscode == _hashLocalPasscode(email, localPasscode) ||
+        current.localPasscode == localPasscode.trim();
+    if (!current.hasLocalPasscode || !emailMatches || !passcodeMatches) {
+      return false;
+    }
+
+    await _update((value) => value.copyWith(isSignedIn: true));
+    return true;
+  }
+
+  Future<bool> resetLocalPasscode({
+    required String email,
+    required String localPasscode,
+  }) async {
+    final current = state.asData?.value ?? LocalAccountState.defaults();
+    final hasEmail = current.email.trim().isNotEmpty;
+    final emailMatches =
+        current.email.trim().toLowerCase() == email.trim().toLowerCase();
+    if (hasEmail && !emailMatches) {
+      return false;
+    }
+
+    await _update(
+      (value) => value.copyWith(
+        email: email.trim(),
+        localPasscode: _hashLocalPasscode(email, localPasscode),
+      ),
+    );
+    return true;
   }
 
   Future<void> signOut() {
@@ -187,6 +239,7 @@ class LocalAccountController extends AsyncNotifier<LocalAccountState> {
     await prefs.remove(_selectedPlanKey);
     await prefs.remove(_trialStartedAtKey);
     await prefs.remove(_redeemedCodesKey);
+    await prefs.remove(_localPasscodeKey);
   }
 
   Future<void> _update(
@@ -205,6 +258,7 @@ class LocalAccountController extends AsyncNotifier<LocalAccountState> {
     await prefs.setString(_emailKey, value.email);
     await prefs.setBool(_communicationOptInKey, value.communicationOptIn);
     await prefs.setString(_selectedPlanKey, value.selectedPlan);
+    await prefs.setString(_localPasscodeKey, value.localPasscode);
 
     final trialStartedAt = value.trialStartedAt;
     if (trialStartedAt == null) {
@@ -225,5 +279,15 @@ class LocalAccountController extends AsyncNotifier<LocalAccountState> {
     }
 
     return DateTime.tryParse(value);
+  }
+
+  String _hashLocalPasscode(String email, String passcode) {
+    final input = '${email.trim().toLowerCase()}:${passcode.trim()}';
+    var hash = 0x811c9dc5;
+    for (final unit in input.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
+    return 'fnv1a:${hash.toRadixString(16).padLeft(8, '0')}';
   }
 }

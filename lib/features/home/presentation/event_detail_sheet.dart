@@ -63,12 +63,13 @@ class _EventDetailSheet extends StatelessWidget {
     final isPast = days < 0;
     final isToday = days == 0;
 
+    final tones = context.plannerTones;
     return FractionallySizedBox(
       heightFactor: 0.82,
       child: Container(
-        decoration: const BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(36)),
+        decoration: BoxDecoration(
+          color: tones.scaffold,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(36)),
         ),
         child: SafeArea(
           top: false,
@@ -82,7 +83,7 @@ class _EventDetailSheet extends StatelessWidget {
                     width: 46,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: AppColors.mutedInk.withValues(alpha: 0.22),
+                      color: tones.mutedInk.withValues(alpha: 0.22),
                       borderRadius: BorderRadius.circular(999),
                     ),
                   ),
@@ -102,15 +103,15 @@ class _EventDetailSheet extends StatelessWidget {
                     Text(
                       calendar.name.toUpperCase(),
                       style: textTheme.labelLarge?.copyWith(
-                        color: AppColors.mutedInk,
+                        color: tones.mutedInk,
                       ),
                     ),
                     const Spacer(),
                     IconButton(
                       onPressed: () => Navigator.of(context).pop(),
                       style: IconButton.styleFrom(
-                        backgroundColor: AppColors.line,
-                        foregroundColor: AppColors.ink,
+                        backgroundColor: tones.line,
+                        foregroundColor: tones.ink,
                         fixedSize: const Size(38, 38),
                         padding: EdgeInsets.zero,
                       ),
@@ -124,13 +125,14 @@ class _EventDetailSheet extends StatelessWidget {
                   style: textTheme.displayMedium?.copyWith(
                     fontSize: 32,
                     letterSpacing: -1,
+                    color: tones.ink,
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   event.timeRange,
                   style: textTheme.titleMedium?.copyWith(
-                    color: AppColors.mutedInk,
+                    color: tones.mutedInk,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -144,14 +146,14 @@ class _EventDetailSheet extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: isPast
-                        ? AppColors.line
+                        ? tones.line
                         : isToday
                             ? AppColors.teal.withValues(alpha: 0.12)
                             : calendar.color.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: isPast
-                          ? AppColors.line
+                          ? tones.line
                           : isToday
                               ? AppColors.teal.withValues(alpha: 0.4)
                               : calendar.color.withValues(alpha: 0.3),
@@ -165,7 +167,7 @@ class _EventDetailSheet extends StatelessWidget {
                           Text(
                             'COUNTDOWN',
                             style: textTheme.labelLarge?.copyWith(
-                              color: AppColors.mutedInk,
+                              color: tones.mutedInk,
                               fontSize: 10,
                             ),
                           ),
@@ -179,7 +181,7 @@ class _EventDetailSheet extends StatelessWidget {
                             style: textTheme.displayMedium?.copyWith(
                               fontSize: 26,
                               color: isPast
-                                  ? AppColors.mutedInk
+                                  ? tones.mutedInk
                                   : isToday
                                       ? AppColors.teal
                                       : calendar.color,
@@ -197,7 +199,7 @@ class _EventDetailSheet extends StatelessWidget {
                                 : Icons.hourglass_bottom_rounded,
                         size: 32,
                         color: isPast
-                            ? AppColors.mutedInk
+                            ? tones.mutedInk
                             : isToday
                                 ? AppColors.teal
                                 : calendar.color,
@@ -244,6 +246,17 @@ class _EventDetailSheet extends StatelessWidget {
                           value: event.location,
                           accentColor: AppColors.coral,
                         ),
+                      if (event.location.isNotEmpty)
+                        _LocalMapPreview(location: event.location),
+                      if (event.location.isNotEmpty)
+                        _LocalForecastCard(date: event.startAt),
+                      if (event.attendees.isNotEmpty)
+                        _DetailRow(
+                          icon: Icons.people_alt_rounded,
+                          title: 'People',
+                          value: event.attendees.join(', '),
+                          accentColor: AppColors.teal,
+                        ),
                       if (event.url.isNotEmpty)
                         _DetailRow(
                           icon: Icons.link_rounded,
@@ -281,8 +294,8 @@ class _EventDetailSheet extends StatelessWidget {
                       onEdit();
                     },
                     style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.charcoal,
-                      foregroundColor: Colors.white,
+                      backgroundColor: tones.ink,
+                      foregroundColor: tones.scaffold,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(18),
@@ -298,7 +311,7 @@ class _EventDetailSheet extends StatelessWidget {
                   child: TextButton(
                     onPressed: () => _shareCountdown(context),
                     style: TextButton.styleFrom(
-                      foregroundColor: AppColors.mutedInk,
+                      foregroundColor: tones.mutedInk,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                     child: const Text(
@@ -320,6 +333,205 @@ class _EventDetailSheet extends StatelessWidget {
   }
 }
 
+class _LocalMapPreview extends StatelessWidget {
+  const _LocalMapPreview({required this.location});
+
+  final String location;
+
+  @override
+  Widget build(BuildContext context) {
+    final hash = location.codeUnits.fold<int>(0, (sum, unit) => sum + unit);
+    final markerX = 42.0 + (hash % 120);
+    final markerY = 34.0 + (hash % 54);
+
+    return Container(
+      height: 132,
+      margin: const EdgeInsets.only(bottom: 10),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: const Color(0xFFDDECD9),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            left: -20,
+            top: 18,
+            child: Container(
+              width: 180,
+              height: 26,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.34),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+          Positioned(
+            right: -28,
+            bottom: 18,
+            child: Container(
+              width: 190,
+              height: 34,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.28),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+          Positioned(
+            left: markerX,
+            top: markerY,
+            child: const Icon(
+              Icons.location_pin,
+              color: AppColors.coral,
+              size: 34,
+            ),
+          ),
+          Positioned(
+            left: 14,
+            right: 14,
+            bottom: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.88),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.map_rounded,
+                    color: AppColors.mutedInk,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      location,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppColors.ink,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LocalForecastCard extends StatelessWidget {
+  const _LocalForecastCard({required this.date});
+
+  final DateTime date;
+
+  @override
+  Widget build(BuildContext context) {
+    final forecast = _forecastFor(date);
+    final tones = context.plannerTones;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: tones.surfaceRaised,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: tones.line),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: forecast.color.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(forecast.icon, color: forecast.color, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Offline Forecast',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: tones.mutedInk,
+                    fontSize: 10,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${forecast.temperature}°, ${forecast.humidity}% humidity and ${forecast.summary}',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: tones.ink),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  _Forecast _forecastFor(DateTime date) {
+    final seed = (date.year + date.month * 5 + date.day * 11) % 4;
+    return switch (seed) {
+      0 => const _Forecast(
+          icon: Icons.wb_sunny_rounded,
+          color: AppColors.gold,
+          temperature: 72,
+          humidity: 45,
+          summary: 'no rain',
+        ),
+      1 => const _Forecast(
+          icon: Icons.cloud_rounded,
+          color: AppColors.lilac,
+          temperature: 66,
+          humidity: 58,
+          summary: 'cloud cover',
+        ),
+      2 => const _Forecast(
+          icon: Icons.water_drop_rounded,
+          color: AppColors.teal,
+          temperature: 61,
+          humidity: 74,
+          summary: 'light rain',
+        ),
+      _ => const _Forecast(
+          icon: Icons.air_rounded,
+          color: AppColors.sage,
+          temperature: 69,
+          humidity: 50,
+          summary: 'a breeze',
+        ),
+    };
+  }
+}
+
+class _Forecast {
+  const _Forecast({
+    required this.icon,
+    required this.color,
+    required this.temperature,
+    required this.humidity,
+    required this.summary,
+  });
+
+  final IconData icon;
+  final Color color;
+  final int temperature;
+  final int humidity;
+  final String summary;
+}
+
 class _DetailChip extends StatelessWidget {
   const _DetailChip({
     required this.icon,
@@ -333,7 +545,8 @@ class _DetailChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final chipColor = color ?? AppColors.mutedInk;
+    final tones = context.plannerTones;
+    final chipColor = color ?? tones.mutedInk;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -349,7 +562,7 @@ class _DetailChip extends StatelessWidget {
           Text(
             label,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: AppColors.ink,
+              color: tones.ink,
               fontWeight: FontWeight.w700,
               fontSize: 12,
             ),
@@ -375,14 +588,15 @@ class _DetailRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = accentColor ?? AppColors.mutedInk;
+    final tones = context.plannerTones;
+    final color = accentColor ?? tones.mutedInk;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: tones.surfaceRaised,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.line),
+        border: Border.all(color: tones.line),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -404,12 +618,12 @@ class _DetailRow extends StatelessWidget {
                 Text(
                   title.toUpperCase(),
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: AppColors.mutedInk,
+                    color: tones.mutedInk,
                     fontSize: 10,
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(value, style: Theme.of(context).textTheme.bodyLarge),
+                Text(value, style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: tones.ink)),
               ],
             ),
           ),

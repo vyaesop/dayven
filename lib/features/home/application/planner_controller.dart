@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/http_api_client.dart';
+import '../../../core/notifications/push_notification_service.dart';
 import '../../../core/storage/sqlite_database.dart';
 import '../../../core/storage/storage_mode.dart';
 import '../data/demo_planner_repository.dart';
@@ -50,9 +53,15 @@ final plannerControllerProvider =
 class PlannerController extends AsyncNotifier<PlannerState> {
   PlannerRepository get _repository => ref.read(plannerRepositoryProvider);
 
+  PushNotificationService get _notifications =>
+      PushNotificationService.instance;
+
   @override
-  Future<PlannerState> build() {
-    return _repository.loadInitialState();
+  Future<PlannerState> build() async {
+    final initial = await _repository.loadInitialState();
+    // Reschedule reminders from the persisted store on every cold start.
+    unawaited(_notifications.rescheduleAllEventReminders(initial.events));
+    return initial;
   }
 
   void selectDate(DateTime date) {
@@ -114,6 +123,7 @@ class PlannerController extends AsyncNotifier<PlannerState> {
     }
 
     final created = await _repository.createEvent(draft);
+    await _notifications.scheduleEventReminder(created);
     final nextEvents = List<PlannerEvent>.from(current.events)..add(created);
     nextEvents.sort((a, b) => a.startAt.compareTo(b.startAt));
 
@@ -137,6 +147,7 @@ class PlannerController extends AsyncNotifier<PlannerState> {
     }
 
     final updated = await _repository.updateEvent(event);
+    await _notifications.scheduleEventReminder(updated);
     final nextEvents = current.events
         .map((existing) => existing.id == updated.id ? updated : existing)
         .toList()
@@ -162,6 +173,7 @@ class PlannerController extends AsyncNotifier<PlannerState> {
     }
 
     await _repository.deleteEvent(eventId);
+    await _notifications.cancelEventReminder(eventId);
     final nextEvents =
         current.events.where((event) => event.id != eventId).toList();
 

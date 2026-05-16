@@ -38,11 +38,19 @@ This plan assumes:
 - [x] Make text sizing preference update the app with persisted scaling
 - [x] Add functional event search over loaded planner data
 - [x] Add functional RSVP attendee summary from event invitees
-Conti- [x] Persist smart-alert and travel preference toggles locally
+- [x] Persist smart-alert and travel preference toggles locally
 - [x] Add local account, profile, and membership preview state
 - [x] Add local support, feedback, and feature-request queue state
 - [x] Add dynamic calendar settings with default calendar persistence
 - [x] Add all-day event support across app, SQLite, and backend scaffold
+- [x] Make timeline density, layout, shading, visibility, and color settings persist and affect the planner locally
+- [x] Add offline daily briefing / forecast / travel preview cards from local event data
+- [x] Add local RSVP response persistence and status controls
+- [x] Add offline map-style and forecast-style event detail cards
+- [x] Add persisted travel mode, directions app, rain alert, daily briefing, and app icon preview settings
+- [x] Add local profile sign-in, passcode unlock, and local passcode reset flow
+- [x] Add Firebase Cloud Messaging client scaffolding, Android notification permissions, default channel, foreground display, and status surface
+- [x] Generate and install production-style Android launcher icon assets
 - [ ] Add auth flow
 - [ ] Expand month view interactions beyond current browsing/filtering
 - [ ] Add advanced event editing flows

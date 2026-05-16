@@ -383,9 +383,17 @@ class PlannerState {
   }
 
   List<PlannerDay> get railDays {
+    return railDaysFor(9);
+  }
+
+  List<PlannerDay> railDaysFor(int count) {
+    final safeCount = count.clamp(3, 10);
     final today = _startOfDay(DateTime.now());
-    return List<PlannerDay>.generate(9, (index) {
-      final date = _startOfDay(selectedDate.add(Duration(days: index - 3)));
+    final selectedOffset = safeCount ~/ 2;
+    return List<PlannerDay>.generate(safeCount, (index) {
+      final date = _startOfDay(
+        selectedDate.add(Duration(days: index - selectedOffset)),
+      );
       return PlannerDay(
         date: date,
         label: DateFormat('EEE').format(date).toUpperCase(),

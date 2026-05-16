@@ -35,13 +35,14 @@ class _CalendarFilterSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final tones = context.plannerTones;
 
     return FractionallySizedBox(
       heightFactor: 0.72,
       child: Container(
-        decoration: const BoxDecoration(
-          color: AppColors.charcoal,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(34)),
+        decoration: BoxDecoration(
+          color: tones.menuSurface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(34)),
         ),
         child: SafeArea(
           top: false,

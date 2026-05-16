@@ -1,13 +1,16 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_theme.dart';
+import '../../../core/notifications/push_notification_service.dart';
 import '../../../core/storage/storage_mode.dart';
 import '../../account/application/local_account_controller.dart';
 import '../../home/application/planner_controller.dart';
 import '../../home/domain/planner_models.dart';
+import '../application/local_rsvp_controller.dart';
 import '../../preferences/application/app_preferences_controller.dart';
 import '../../support/application/local_support_controller.dart';
 
@@ -165,11 +168,16 @@ class _FeatureScaffold extends ConsumerWidget {
         ref.watch(appPreferencesControllerProvider).asData?.value ??
         AppPreferences.defaults();
     final accent = preferences.accentPalette.color;
-    final background = preferences.themeMode == PlannerThemeMode.mono
-        ? const Color(0xFF6A6860)
-        : preferences.themeMode == PlannerThemeMode.dark
-            ? const Color(0xFF1E1C18)
-            : AppColors.charcoal;
+    // Settings panels live on a darkened version of the active surface so the
+    // user gets a consistent "drawer-like" feel even in light themes — matching
+    // the Timepage design where the chrome around setting groups is always a
+    // dim charcoal regardless of mode, with subtle tonal shifts.
+    final background = switch (preferences.themeMode) {
+      PlannerThemeMode.mono => const Color(0xFF6A6860),
+      PlannerThemeMode.vivid => AppColors.charcoal,
+      PlannerThemeMode.muted => const Color(0xFF4A4843),
+      PlannerThemeMode.dark => const Color(0xFF1A1814),
+    };
 
     return Scaffold(
       backgroundColor: background,
@@ -198,7 +206,7 @@ class _FeatureScaffold extends ConsumerWidget {
                     ),
                   ),
                   const Spacer(),
-                  Icon(destination.icon, color: Colors.white38, size: 20),
+                  Icon(destination.icon, color: Colors.white.withValues(alpha: 0.32), size: 20),
                 ],
               ),
               const SizedBox(height: 20),
@@ -329,7 +337,8 @@ class _GeneralSettings extends StatelessWidget {
             ),
             const _SwitchRow(title: 'On This Day', value: true, note: 'On empty days'),
             _SwitchRow(
-              title: 'Weather',
+              title: 'Weather card',
+              note: 'Show weather + briefing on the day view',
               value: prefs.showWeather,
               onChanged: (v) =>
                   notifier.setBoolPreference(PreferenceKeys.showWeather, v),
@@ -364,10 +373,14 @@ class _GeneralSettings extends StatelessWidget {
             ),
           ],
         ),
-        const _SettingsGroup(
+        _SettingsGroup(
           title: 'Reset',
           children: [
-            _InfoRow(title: 'Reset All Preferences and Tips', value: '→'),
+            _ActionSettingRow(
+              title: 'Reset All Preferences and Tips',
+              value: 'Reset',
+              onTap: notifier.resetPreferences,
+            ),
           ],
         ),
       ],
@@ -385,27 +398,25 @@ class _TimelineSettings extends StatefulWidget {
 }
 
 class _TimelineSettingsState extends State<_TimelineSettings> {
-  int _daysAtAGlance = 5;
-  String _layoutMode = 'Traditional';
-  bool _shadingAlternateDays = true;
-  bool _shadingThePast = true;
-  bool _shadingWeekends = false;
-  bool _shadingToday = true;
-  bool _heavyShading = true;
-  bool _eventAnimation = true;
-  bool _floatingAddButton = true;
-  bool _hideAllDayEvents = false;
-  bool _hideBirthdays = false;
-
   @override
   Widget build(BuildContext context) {
+    final prefs = widget.prefs;
+    final notifier = widget.notifier;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SettingsGroup(
           title: 'Invites',
           children: [
-            const _SwitchRow(title: 'Show event invites on timeline', value: true),
+            _SwitchRow(
+              title: 'Show event invites on timeline',
+              value: prefs.timelineInvites,
+              onChanged: (v) => notifier.setBoolPreference(
+                PreferenceKeys.timelineInvites,
+                v,
+              ),
+            ),
           ],
         ),
         _SettingsGroup(
@@ -413,23 +424,35 @@ class _TimelineSettingsState extends State<_TimelineSettings> {
           children: [
             _SwitchRow(
               title: 'Alternate days',
-              value: _shadingAlternateDays,
-              onChanged: (v) => setState(() => _shadingAlternateDays = v),
+              value: prefs.shadeAlternateDays,
+              onChanged: (v) => notifier.setBoolPreference(
+                PreferenceKeys.shadeAlternateDays,
+                v,
+              ),
             ),
             _SwitchRow(
               title: 'The past',
-              value: _shadingThePast,
-              onChanged: (v) => setState(() => _shadingThePast = v),
+              value: prefs.shadePastDays,
+              onChanged: (v) => notifier.setBoolPreference(
+                PreferenceKeys.shadePastDays,
+                v,
+              ),
             ),
             _SwitchRow(
               title: 'Weekends',
-              value: _shadingWeekends,
-              onChanged: (v) => setState(() => _shadingWeekends = v),
+              value: prefs.shadeWeekends,
+              onChanged: (v) => notifier.setBoolPreference(
+                PreferenceKeys.shadeWeekends,
+                v,
+              ),
             ),
             _SwitchRow(
               title: 'Today',
-              value: _shadingToday,
-              onChanged: (v) => setState(() => _shadingToday = v),
+              value: prefs.shadeToday,
+              onChanged: (v) => notifier.setBoolPreference(
+                PreferenceKeys.shadeToday,
+                v,
+              ),
             ),
           ],
         ),
@@ -438,8 +461,11 @@ class _TimelineSettingsState extends State<_TimelineSettings> {
           children: [
             _SwitchRow(
               title: 'On',
-              value: _heavyShading,
-              onChanged: (v) => setState(() => _heavyShading = v),
+              value: prefs.heavyShading,
+              onChanged: (v) => notifier.setBoolPreference(
+                PreferenceKeys.heavyShading,
+                v,
+              ),
             ),
           ],
         ),
@@ -448,8 +474,11 @@ class _TimelineSettingsState extends State<_TimelineSettings> {
           children: [
             _SwitchRow(
               title: 'Cycle through events on busy days',
-              value: _eventAnimation,
-              onChanged: (v) => setState(() => _eventAnimation = v),
+              value: prefs.cycleBusyDayEvents,
+              onChanged: (v) => notifier.setBoolPreference(
+                PreferenceKeys.cycleBusyDayEvents,
+                v,
+              ),
             ),
           ],
         ),
@@ -458,8 +487,11 @@ class _TimelineSettingsState extends State<_TimelineSettings> {
           children: [
             _SwitchRow(
               title: 'Show button on timeline',
-              value: _floatingAddButton,
-              onChanged: (v) => setState(() => _floatingAddButton = v),
+              value: prefs.showActions,
+              onChanged: (v) => notifier.setBoolPreference(
+                PreferenceKeys.showActions,
+                v,
+              ),
             ),
           ],
         ),
@@ -469,24 +501,26 @@ class _TimelineSettingsState extends State<_TimelineSettings> {
             for (final n in [3, 4, 5, 6, 7, 8, 9, 10])
               _ChoiceRow(
                 title: '$n',
-                selected: _daysAtAGlance == n,
-                onTap: () => setState(() => _daysAtAGlance = n),
+                selected: prefs.daysAtAGlance == n,
+                onTap: () => notifier.setIntPreference(
+                  PreferenceKeys.daysAtAGlance,
+                  n,
+                ),
               ),
           ],
         ),
         _SettingsGroup(
           title: 'Layout Mode',
           children: [
-            _ChoiceRow(
-              title: 'Traditional',
-              selected: _layoutMode == 'Traditional',
-              onTap: () => setState(() => _layoutMode = 'Traditional'),
-            ),
-            _ChoiceRow(
-              title: 'Multi-line',
-              selected: _layoutMode == 'Multi-line',
-              onTap: () => setState(() => _layoutMode = 'Multi-line'),
-            ),
+            for (final mode in ['Traditional', 'Day Hourly', 'Multi-line'])
+              _ChoiceRow(
+                title: mode,
+                selected: prefs.timelineLayoutMode == mode,
+                onTap: () => notifier.setStringPreference(
+                  PreferenceKeys.timelineLayoutMode,
+                  mode,
+                ),
+              ),
           ],
         ),
         _SettingsGroup(
@@ -494,13 +528,19 @@ class _TimelineSettingsState extends State<_TimelineSettings> {
           children: [
             _SwitchRow(
               title: 'Hide all-day events',
-              value: _hideAllDayEvents,
-              onChanged: (v) => setState(() => _hideAllDayEvents = v),
+              value: !prefs.showAllDay,
+              onChanged: (v) => notifier.setBoolPreference(
+                PreferenceKeys.showAllDay,
+                !v,
+              ),
             ),
             _SwitchRow(
               title: 'Hide birthdays',
-              value: _hideBirthdays,
-              onChanged: (v) => setState(() => _hideBirthdays = v),
+              value: !prefs.showBirthdays,
+              onChanged: (v) => notifier.setBoolPreference(
+                PreferenceKeys.showBirthdays,
+                !v,
+              ),
             ),
           ],
         ),
@@ -592,42 +632,33 @@ class _ThemeSurface extends ConsumerWidget {
         AppPreferences.defaults();
     final notifier = ref.read(appPreferencesControllerProvider.notifier);
     final palettes = PlannerAccentPalette.values;
+    final accent = prefs.accentPalette.color;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const _TinyToolbar(title: 'THEMES'),
-        const SizedBox(height: 34),
+        const SizedBox(height: 22),
+        // Five small swatches at the top: the four nearest neighbors plus the
+        // selected one in the middle (matching the design's "color stack" hint).
+        Center(
+          child: _AccentNeighborStrip(
+            current: prefs.accentPalette,
+            onPick: notifier.setAccentPalette,
+          ),
+        ),
+        const SizedBox(height: 26),
+        // Decorative scatter cluster: the active swatch is large and centered,
+        // surrounded by softly-positioned neighbors. Tapping any spawns a swap.
         Center(
           child: SizedBox(
-            width: 320,
-            height: 320,
-            child: Stack(
-              children: [
-                for (var index = 0; index < palettes.length; index++)
-                  Positioned(
-                    left: _bubbleLeft(index, palettes.length,
-                        palettes[index] == prefs.accentPalette),
-                    top: _bubbleTop(index, palettes.length,
-                        palettes[index] == prefs.accentPalette),
-                    child: _ThemeBubble(
-                      color: palettes[index].color,
-                      selected: palettes[index] == prefs.accentPalette,
-                      size: palettes[index] == prefs.accentPalette ? 46 : 26,
-                      onTap: () => notifier.setAccentPalette(palettes[index]),
-                    ),
-                  ),
-                Positioned(
-                  left: 136,
-                  top: 136,
-                  child: _ThemeBubble(
-                    color: prefs.accentPalette.color,
-                    selected: true,
-                    size: 48,
-                    onTap: () {},
-                  ),
-                ),
-              ],
+            width: 300,
+            height: 230,
+            child: _ScatterBubbleCluster(
+              palettes: palettes,
+              current: prefs.accentPalette,
+              themeMode: prefs.themeMode,
+              onPick: notifier.setAccentPalette,
             ),
           ),
         ),
@@ -636,15 +667,17 @@ class _ThemeSurface extends ConsumerWidget {
             prefs.accentPalette.label,
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
               color: Colors.white,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
-        const SizedBox(height: 30),
+        const SizedBox(height: 18),
         _ThemeModeSelector(
           selectedMode: prefs.themeMode,
+          accent: accent,
           onSelected: notifier.setThemeMode,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 22),
         _SettingsGroup(
           title: 'Palette',
           children: [
@@ -653,6 +686,7 @@ class _ThemeSurface extends ConsumerWidget {
                 title: palette.label,
                 color: palette.color,
                 selected: palette == prefs.accentPalette,
+                accent: accent,
                 onTap: () => notifier.setAccentPalette(palette),
               ),
           ],
@@ -660,20 +694,139 @@ class _ThemeSurface extends ConsumerWidget {
       ],
     );
   }
+}
 
-  static const double _radius = 128;
-  static const double _center = 160;
+/// Top row of five small swatches centered on the active accent, with the
+/// previous/next palette entries flanking it. This is the small palette stack
+/// rendered above the bubble cluster in the design.
+class _AccentNeighborStrip extends StatelessWidget {
+  const _AccentNeighborStrip({required this.current, required this.onPick});
 
-  double _bubbleLeft(int index, int total, bool selected) {
-    final angle = (2 * math.pi * index) / total - math.pi / 2;
-    final size = selected ? 46.0 : 26.0;
-    return _center - size / 2 + _radius * math.cos(angle);
+  final PlannerAccentPalette current;
+  final ValueChanged<PlannerAccentPalette> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final all = PlannerAccentPalette.values;
+    final i = all.indexOf(current);
+    PlannerAccentPalette neighbor(int offset) {
+      final idx = (i + offset) % all.length;
+      return all[idx < 0 ? idx + all.length : idx];
+    }
+
+    final entries = [
+      neighbor(-2),
+      neighbor(-1),
+      current,
+      neighbor(1),
+      neighbor(2),
+    ];
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (final entry in entries)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: GestureDetector(
+              onTap: () => onPick(entry),
+              child: Container(
+                width: entry == current ? 18 : 14,
+                height: entry == current ? 18 : 14,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: entry.color,
+                    width: entry == current ? 2.4 : 1.6,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
+}
 
-  double _bubbleTop(int index, int total, bool selected) {
-    final angle = (2 * math.pi * index) / total - math.pi / 2;
-    final size = selected ? 46.0 : 26.0;
-    return _center - size / 2 + _radius * math.sin(angle);
+/// A semi-deterministic scatter of bubbles around the active accent. We use a
+/// stable seed (the palette's enum index) so the cluster never reshuffles
+/// between rebuilds — the user sees the same layout each time, just with the
+/// center bubble swapping color when they pick a new accent.
+class _ScatterBubbleCluster extends StatelessWidget {
+  const _ScatterBubbleCluster({
+    required this.palettes,
+    required this.current,
+    required this.themeMode,
+    required this.onPick,
+  });
+
+  final List<PlannerAccentPalette> palettes;
+  final PlannerAccentPalette current;
+  final PlannerThemeMode themeMode;
+  final ValueChanged<PlannerAccentPalette> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final h = constraints.maxHeight;
+        final cx = w / 2;
+        final cy = h / 2;
+
+        // Center bubble (active accent).
+        final centerSize = 64.0;
+        final children = <Widget>[
+          Positioned(
+            left: cx - centerSize / 2,
+            top: cy - centerSize / 2,
+            child: _ThemeBubble(
+              color: current.color,
+              selected: true,
+              size: centerSize,
+              onTap: () {},
+            ),
+          ),
+        ];
+
+        // The other palette entries scattered in two loose rings around the
+        // center. Sizes vary slightly so the cluster feels organic.
+        final others = palettes.where((p) => p != current).toList();
+        for (var i = 0; i < others.length; i++) {
+          final p = others[i];
+          // Deterministic pseudo-random offsets based on enum index.
+          final seed = p.index * 9173 + 17;
+          final ringIndex = i % 2 == 0 ? 0 : 1; // alternate inner/outer ring
+          final ringRadius = ringIndex == 0 ? 58.0 : 96.0;
+          final angle = ((i * 137.508) % 360) * math.pi / 180;
+          final jitterR = ((seed % 17) - 8) * 0.9;
+          final jitterAng = ((seed % 31) - 15) * 0.012;
+          final r = ringRadius + jitterR;
+          final a = angle + jitterAng;
+          final size = ringIndex == 0
+              ? (22.0 + (seed % 5))
+              : (16.0 + (seed % 7));
+          final x = cx + r * math.cos(a) - size / 2;
+          final y = cy + r * math.sin(a) * 0.78 - size / 2; // squash vertically
+
+          if (x < -size || x > w || y < -size || y > h) continue;
+          children.add(
+            Positioned(
+              left: x,
+              top: y,
+              child: _ThemeBubble(
+                color: p.color,
+                selected: false,
+                size: size,
+                onTap: () => onPick(p),
+              ),
+            ),
+          );
+        }
+
+        return Stack(children: children);
+      },
+    );
   }
 }
 
@@ -763,8 +916,32 @@ class _SmartAlertsSurface extends ConsumerWidget {
               onChanged: (v) =>
                   notifier.setBoolPreference(PreferenceKeys.rainAlerts, v),
             ),
-            const _InfoRow(title: 'Alert for', value: 'Any Rain'),
-            const _InfoRow(title: 'Minutes notice', value: '15'),
+            for (final mode in ['Any rain', 'Only heavy rain', 'Alert off'])
+              _ChoiceRow(
+                title: mode,
+                selected: prefs.rainAlertMode == mode,
+                onTap: () => notifier.setStringPreference(
+                  PreferenceKeys.rainAlertMode,
+                  mode,
+                ),
+              ),
+            for (final minutes in [5, 15, 30, 45, 60])
+              _ChoiceRow(
+                title: '$minutes minutes notice',
+                selected: prefs.rainNoticeMinutes == minutes,
+                onTap: () => notifier.setIntPreference(
+                  PreferenceKeys.rainNoticeMinutes,
+                  minutes,
+                ),
+              ),
+            _SwitchRow(
+              title: 'Severe alerts',
+              value: prefs.severeWeatherAlerts,
+              onChanged: (v) => notifier.setBoolPreference(
+                PreferenceKeys.severeWeatherAlerts,
+                v,
+              ),
+            ),
           ],
         ),
         _SettingsGroup(
@@ -773,9 +950,38 @@ class _SmartAlertsSurface extends ConsumerWidget {
             _SwitchRow(
               title: 'Daily briefing',
               value: prefs.dailyBriefing,
-              note: '8:00 AM every day',
+              note:
+                  '${_formatBriefingTime(prefs.dailyBriefingHour, prefs.dailyBriefingMinute)} every day',
               onChanged: (v) =>
                   notifier.setBoolPreference(PreferenceKeys.dailyBriefing, v),
+            ),
+            for (final hour in [6, 7, 8])
+              _ChoiceRow(
+                title: _formatBriefingTime(hour, 0),
+                selected: prefs.dailyBriefingHour == hour &&
+                    prefs.dailyBriefingMinute == 0,
+                onTap: () {
+                  notifier.setIntPreference(
+                    PreferenceKeys.dailyBriefingHour,
+                    hour,
+                  );
+                  notifier.setIntPreference(
+                    PreferenceKeys.dailyBriefingMinute,
+                    0,
+                  );
+                },
+              ),
+            _ChoiceRow(
+              title: _formatBriefingTime(8, 30),
+              selected: prefs.dailyBriefingHour == 8 &&
+                  prefs.dailyBriefingMinute == 30,
+              onTap: () {
+                notifier.setIntPreference(PreferenceKeys.dailyBriefingHour, 8);
+                notifier.setIntPreference(
+                  PreferenceKeys.dailyBriefingMinute,
+                  30,
+                );
+              },
             ),
           ],
         ),
@@ -791,18 +997,106 @@ class _SmartAlertsSurface extends ConsumerWidget {
             ),
           ],
         ),
-        const _SettingsGroup(
-          title: 'Status',
-          children: [
-            _InfoRow(
-              title: 'Notification scheduling',
-              value: 'Pending integration',
-            ),
-            _InfoRow(title: 'Location', value: 'Required for time-to-leave'),
-          ],
+        FutureBuilder<PushNotificationSnapshot>(
+          future: PushNotificationService.instance.snapshot(),
+          builder: (context, snapshot) {
+            final value = snapshot.data;
+            final token = value?.fcmToken ?? '';
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SettingsGroup(
+                  title: 'Status',
+                  children: [
+                    _InfoRow(
+                      title: 'Push notifications',
+                      value:
+                          value?.enabled == true ? 'Ready' : 'Not configured',
+                    ),
+                    _InfoRow(
+                      title: 'Permission',
+                      value: value?.permissionStatus ?? 'Unknown',
+                    ),
+                    _InfoRow(
+                      title: 'Device token',
+                      value: token.isEmpty ? 'Waiting' : _shortToken(token),
+                    ),
+                    if (value?.lastTitle.isNotEmpty == true)
+                      _InfoRow(
+                        title: 'Last message',
+                        value: value!.lastTitle,
+                      ),
+                    if (value?.error.isNotEmpty == true)
+                      _InfoRow(
+                        title: 'Setup note',
+                        value: 'Needs Firebase config',
+                      ),
+                  ],
+                ),
+                _SettingsGroup(
+                  title: 'Test',
+                  children: [
+                    _ActionSettingRow(
+                      title: 'Send test notification',
+                      value: 'Fire now',
+                      onTap: () async {
+                        await PushNotificationService.instance
+                            .sendTestLocalNotification();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Test notification sent'),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    _ActionSettingRow(
+                      title: 'Copy device token',
+                      value: token.isEmpty ? 'Waiting' : 'Copy',
+                      onTap: () async {
+                        if (token.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Token not ready yet — reopen this screen in a moment',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+                        await Clipboard.setData(ClipboardData(text: token));
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('FCM token copied to clipboard'),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
         ),
       ],
     );
+  }
+
+  String _shortToken(String token) {
+    if (token.length <= 12) {
+      return token;
+    }
+    return '${token.substring(0, 6)}…${token.substring(token.length - 4)}';
+  }
+
+  String _formatBriefingTime(int hour, int minute) {
+    final suffix = hour >= 12 ? 'PM' : 'AM';
+    final displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    final displayMinute = minute.toString().padLeft(2, '0');
+    return '$displayHour:$displayMinute $suffix';
   }
 }
 
@@ -985,11 +1279,8 @@ class _TravelSurface extends ConsumerStatefulWidget {
 }
 
 class _TravelSurfaceState extends ConsumerState<_TravelSurface> {
-  String _travelMode = 'Driving';
-  String _directionsApp = 'Google Maps';
-
-  static const _travelModes = ['Driving', 'Walking', 'Cycling', 'Transit'];
-  static const _directionsApps = ['Google Maps', 'Waze', 'Apple Maps'];
+  static const _travelModes = ['Driving', 'Walking', 'Bicycling', 'Transit'];
+  static const _directionsApps = ['Google Maps', 'Waze', 'System default'];
 
   @override
   Widget build(BuildContext context) {
@@ -1014,8 +1305,11 @@ class _TravelSurfaceState extends ConsumerState<_TravelSurface> {
             for (final mode in _travelModes)
               _ChoiceRow(
                 title: mode,
-                selected: _travelMode == mode,
-                onTap: () => setState(() => _travelMode = mode),
+                selected: prefs.travelMode == mode,
+                onTap: () => notifier.setStringPreference(
+                  PreferenceKeys.travelMode,
+                  mode,
+                ),
               ),
           ],
         ),
@@ -1025,8 +1319,11 @@ class _TravelSurfaceState extends ConsumerState<_TravelSurface> {
             for (final app in _directionsApps)
               _ChoiceRow(
                 title: app,
-                selected: _directionsApp == app,
-                onTap: () => setState(() => _directionsApp = app),
+                selected: prefs.directionsApp == app,
+                onTap: () => notifier.setStringPreference(
+                  PreferenceKeys.directionsApp,
+                  app,
+                ),
               ),
           ],
         ),
@@ -1269,7 +1566,9 @@ class _SignInSurface extends ConsumerStatefulWidget {
 class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
   late final TextEditingController _nameController;
   late final TextEditingController _emailController;
+  late final TextEditingController _passcodeController;
   bool _communicationOptIn = false;
+  late bool _createMode;
 
   @override
   void initState() {
@@ -1279,13 +1578,16 @@ class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
         LocalAccountState.defaults();
     _nameController = TextEditingController(text: account.displayName);
     _emailController = TextEditingController(text: account.email);
+    _passcodeController = TextEditingController();
     _communicationOptIn = account.communicationOptIn;
+    _createMode = !account.hasLocalPasscode || account.isSignedIn;
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
+    _passcodeController.dispose();
     super.dispose();
   }
 
@@ -1295,6 +1597,7 @@ class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
         ref.watch(localAccountControllerProvider).asData?.value ??
         LocalAccountState.defaults();
     final controller = ref.read(localAccountControllerProvider.notifier);
+    final isUnlockMode = account.hasLocalPasscode && !_createMode;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1304,47 +1607,103 @@ class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                account.isSignedIn ? 'Edit Profile' : 'Sign In',
+                account.isSignedIn
+                    ? 'Edit Profile'
+                    : isUnlockMode
+                        ? 'Sign In'
+                        : 'Create Local Profile',
                 style: Theme.of(context).textTheme.headlineMedium,
               ),
               const SizedBox(height: 6),
               Text(
                 account.isSignedIn
                     ? 'This profile is stored locally on device.'
-                    : 'Email auth is staged here as a local profile until external auth is wired in.',
+                    : isUnlockMode
+                        ? 'Use your local passcode to unlock this on-device profile.'
+                        : 'Create an on-device profile now. Cloud auth can be connected later.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 18),
-              TextField(
-                controller: _nameController,
-                decoration: const InputDecoration(hintText: 'Display name'),
-              ),
-              const SizedBox(height: 12),
+              if (!isUnlockMode) ...[
+                TextField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(hintText: 'Display name'),
+                ),
+                const SizedBox(height: 12),
+              ],
               TextField(
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
                 decoration: const InputDecoration(hintText: 'Email address'),
               ),
               const SizedBox(height: 12),
-              SwitchListTile.adaptive(
-                contentPadding: EdgeInsets.zero,
-                value: _communicationOptIn,
-                title: const Text('Receive updates and release notes'),
-                onChanged: (value) {
-                  setState(() {
-                    _communicationOptIn = value;
-                  });
-                },
+              TextField(
+                controller: _passcodeController,
+                obscureText: true,
+                decoration: InputDecoration(
+                  hintText: isUnlockMode
+                      ? 'Local passcode'
+                      : account.hasLocalPasscode
+                          ? 'New local passcode (optional)'
+                          : 'Create local passcode',
+                ),
               ),
+              if (!isUnlockMode) ...[
+                const SizedBox(height: 12),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  value: _communicationOptIn,
+                  title: const Text('Receive updates and release notes'),
+                  onChanged: (value) {
+                    setState(() {
+                      _communicationOptIn = value;
+                    });
+                  },
+                ),
+              ],
               const SizedBox(height: 16),
               GestureDetector(
                 onTap: () async {
                   final name = _nameController.text.trim();
                   final email = _emailController.text.trim();
-                  if (name.isEmpty || email.isEmpty) {
+                  final passcode = _passcodeController.text.trim();
+
+                  if (email.isEmpty || (!isUnlockMode && name.isEmpty)) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Name and email are required.'),
+                      ),
+                    );
+                    return;
+                  }
+
+                  if (isUnlockMode) {
+                    final unlocked = await controller.unlock(
+                      email: email,
+                      localPasscode: passcode,
+                    );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            unlocked
+                                ? 'Signed in locally.'
+                                : 'Email or passcode did not match.',
+                          ),
+                        ),
+                      );
+                    }
+                    if (unlocked && mounted) {
+                      _passcodeController.clear();
+                      setState(() => _createMode = true);
+                    }
+                    return;
+                  }
+
+                  if (!account.hasLocalPasscode && passcode.length < 4) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Use at least 4 characters.'),
                       ),
                     );
                     return;
@@ -1354,6 +1713,7 @@ class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
                     displayName: name,
                     email: email,
                     communicationOptIn: _communicationOptIn,
+                    localPasscode: passcode.isEmpty ? null : passcode,
                   );
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -1362,12 +1722,24 @@ class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
                       ),
                     );
                   }
+                  _passcodeController.clear();
                 },
-                child: const _InlineButton(
-                  label: 'Save Profile',
+                child: _InlineButton(
+                  label: isUnlockMode ? 'Sign In' : 'Save Profile',
                   icon: Icons.arrow_forward_rounded,
                 ),
               ),
+              if (account.hasLocalPasscode) ...[
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: isUnlockMode
+                      ? () => _showResetPasscodeSheet(context, controller)
+                      : () => setState(() => _createMode = false),
+                  child: Text(
+                    isUnlockMode ? 'Forgot passcode?' : 'Sign out view',
+                  ),
+                ),
+              ],
               const SizedBox(height: 10),
               const _InlineButton(
                 label: 'Continue with Google (coming soon)',
@@ -1383,12 +1755,104 @@ class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
           children: [
             _InfoRow(title: 'Create profile', value: 'Local-first'),
             _InfoRow(title: 'Email opt-in', value: 'Stored locally'),
-            _InfoRow(title: 'Password reset', value: 'Pending live auth'),
+            _InfoRow(title: 'Passcode reset', value: 'Local'),
             _InfoRow(title: 'Google sign-in', value: 'Pending integration'),
           ],
         ),
       ],
     );
+  }
+
+  Future<void> _showResetPasscodeSheet(
+    BuildContext context,
+    LocalAccountController controller,
+  ) {
+    final emailController = TextEditingController(text: _emailController.text);
+    final passcodeController = TextEditingController();
+
+    return showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(ctx).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              18,
+              20,
+              MediaQuery.of(ctx).viewInsets.bottom + 20,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Reset Local Passcode',
+                  style: Theme.of(ctx).textTheme.headlineMedium,
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(hintText: 'Email address'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: passcodeController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    hintText: 'New local passcode',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () async {
+                      final passcode = passcodeController.text.trim();
+                      if (passcode.length < 4) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Use at least 4 characters.'),
+                          ),
+                        );
+                        return;
+                      }
+                      final updated = await controller.resetLocalPasscode(
+                        email: emailController.text,
+                        localPasscode: passcode,
+                      );
+                      if (ctx.mounted) Navigator.of(ctx).pop();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              updated
+                                  ? 'Local passcode reset.'
+                                  : 'Email did not match this profile.',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    child: const Text('Reset Passcode'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ).whenComplete(() {
+      emailController.dispose();
+      passcodeController.dispose();
+    });
   }
 }
 
@@ -1409,7 +1873,7 @@ class _SupportSurfaceState extends ConsumerState<_SupportSurface> {
     ('What can I do with the local plan?', 'Create unlimited events, calendars and reminders — all stored on your device.'),
     ('How do I add people to an event?', 'Open any event, tap Edit, and type names in the People field separated by commas.'),
     ('Can I sync across devices?', 'Cloud sync is coming in v1.0 — select the Cloud Sync storage mode when prompted.'),
-    ('How do I change my theme?', 'Go to Themes in the menu and pick any of the 30+ accent palettes or choose Mono / Vivid / Dark mode.'),
+    ('How do I change my theme?', 'Go to Themes in the menu and pick any of the 29 accent palettes or choose Mono, Vivid, Muted, or Dark mode.'),
     ('How do I reset preferences?', 'Go to Preferences → General and tap Reset All Preferences.'),
   ];
 
@@ -1519,9 +1983,10 @@ class _SupportSurfaceState extends ConsumerState<_SupportSurface> {
                   title: entry.type.label,
                   value: _relativeDate(entry.createdAt),
                 ),
-              _InfoRow(
+              _ActionSettingRow(
                 title: 'Clear all',
                 value: '${entries.length}',
+                onTap: controller.clearAll,
               ),
             ],
           ),
@@ -1822,9 +2287,22 @@ class _RsvpSurface extends ConsumerWidget {
     final events =
         ref.watch(plannerControllerProvider).asData?.value.events ??
         const <PlannerEvent>[];
+    final responses =
+        ref.watch(localRsvpControllerProvider).asData?.value ??
+        const <String, LocalRsvpStatus>{};
+    final rsvpController = ref.read(localRsvpControllerProvider.notifier);
     final invitedEvents = events
         .where((event) => event.attendees.isNotEmpty)
         .toList();
+    final acceptedCount = invitedEvents
+        .where((event) => responses[event.id] == LocalRsvpStatus.accepted)
+        .length;
+    final maybeCount = invitedEvents
+        .where((event) => responses[event.id] == LocalRsvpStatus.maybe)
+        .length;
+    final declinedCount = invitedEvents
+        .where((event) => responses[event.id] == LocalRsvpStatus.declined)
+        .length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1841,10 +2319,12 @@ class _RsvpSurface extends ConsumerWidget {
           children: [
             _InfoRow(
               title: 'Awaiting response',
-              value: '${invitedEvents.length}',
+              value:
+                  '${invitedEvents.length - acceptedCount - maybeCount - declinedCount}',
             ),
-            const _InfoRow(title: 'Accepted', value: '0'),
-            const _InfoRow(title: 'Declined', value: '0'),
+            _InfoRow(title: 'Accepted', value: '$acceptedCount'),
+            _InfoRow(title: 'Maybe', value: '$maybeCount'),
+            _InfoRow(title: 'Declined', value: '$declinedCount'),
           ],
         ),
         if (invitedEvents.isNotEmpty)
@@ -1852,11 +2332,11 @@ class _RsvpSurface extends ConsumerWidget {
             title: 'Events with People',
             children: [
               for (final event in invitedEvents.take(8))
-                _InfoRow(
-                  title: event.title,
-                  value: event.attendees.length == 1
-                      ? event.attendees.first
-                      : '${event.attendees.length} people',
+                _RsvpEventRow(
+                  event: event,
+                  status: responses[event.id] ?? LocalRsvpStatus.awaiting,
+                  onStatusChanged: (status) =>
+                      rsvpController.setStatus(event.id, status),
                 ),
             ],
           )
@@ -1872,6 +2352,81 @@ class _RsvpSurface extends ConsumerWidget {
           ),
       ],
     );
+  }
+}
+
+class _RsvpEventRow extends StatelessWidget {
+  const _RsvpEventRow({
+    required this.event,
+    required this.status,
+    required this.onStatusChanged,
+  });
+
+  final PlannerEvent event;
+  final LocalRsvpStatus status;
+  final ValueChanged<LocalRsvpStatus> onStatusChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  event.title,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+              ),
+              Text(
+                status.label,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: _statusColor(status),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            event.attendees.length == 1
+                ? event.attendees.first
+                : event.attendees.join(', '),
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final option in LocalRsvpStatus.values)
+                ChoiceChip(
+                  label: Text(option.label),
+                  selected: status == option,
+                  onSelected: (_) => onStatusChanged(option),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _statusColor(LocalRsvpStatus value) {
+    return switch (value) {
+      LocalRsvpStatus.accepted => AppColors.sage,
+      LocalRsvpStatus.maybe => AppColors.gold,
+      LocalRsvpStatus.declined => const Color(0xFFD05A5A),
+      LocalRsvpStatus.awaiting => AppColors.mutedInk,
+    };
   }
 }
 
@@ -2061,6 +2616,7 @@ class _AppIconSurface extends ConsumerWidget {
     final prefs =
         ref.watch(appPreferencesControllerProvider).asData?.value ??
         AppPreferences.defaults();
+    final notifier = ref.read(appPreferencesControllerProvider.notifier);
     final textTheme = Theme.of(context).textTheme;
 
     return Column(
@@ -2073,23 +2629,18 @@ class _AppIconSurface extends ConsumerWidget {
           icon: Icons.grid_view_rounded,
           iconColor: AppColors.lilac,
         ),
-        Center(
-          child: Container(
-            width: 96,
-            height: 96,
-            margin: const EdgeInsets.only(bottom: 24),
-            decoration: BoxDecoration(
-              color: prefs.accentPalette.color,
+        Padding(
+          padding: const EdgeInsets.only(bottom: 24),
+          child: Center(
+            child: ClipRRect(
               borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: prefs.accentPalette.color.withValues(alpha: 0.5),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
-                ),
-              ],
+              child: Image.asset(
+                'assets/icons/app_icon.png',
+                width: 96,
+                height: 96,
+                fit: BoxFit.cover,
+              ),
             ),
-            child: const Icon(Icons.calendar_today_rounded, color: Colors.white, size: 44),
           ),
         ),
         _SettingsGroup(
@@ -2119,13 +2670,30 @@ class _AppIconSurface extends ConsumerWidget {
               title: 'Current accent',
               value: prefs.accentPalette.label,
             ),
-            const _InfoRow(
-              title: 'Icon style',
-              value: 'Calendar glyph',
+            _SwitchRow(
+              title: 'Match theme',
+              value: prefs.appIconMatchTheme,
+              onChanged: (v) => notifier.setBoolPreference(
+                PreferenceKeys.appIconMatchTheme,
+                v,
+              ),
             ),
-            const _InfoRow(
-              title: 'Dynamic icons',
-              value: 'Android 13+ supported',
+            for (final badge in [
+              'None',
+              'Events Remaining Today',
+              "Today's Date",
+            ])
+              _ChoiceRow(
+                title: badge,
+                selected: prefs.appIconBadge == badge,
+                onTap: () => notifier.setStringPreference(
+                  PreferenceKeys.appIconBadge,
+                  badge,
+                ),
+              ),
+            _InfoRow(
+              title: 'Badge',
+              value: prefs.appIconBadge,
             ),
           ],
         ),
@@ -2267,6 +2835,7 @@ class _ChoiceRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.secondary;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
@@ -2276,7 +2845,7 @@ class _ChoiceRow extends StatelessWidget {
           selected
               ? Icons.check_circle_rounded
               : Icons.radio_button_unchecked_rounded,
-          color: selected ? AppColors.gold : Colors.white38,
+          color: selected ? accent : Colors.white38,
           size: 20,
         ),
       ),
@@ -2299,6 +2868,7 @@ class _CalendarRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.secondary;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
@@ -2311,7 +2881,7 @@ class _CalendarRow extends StatelessWidget {
         ),
         trailing: Icon(
           selected ? Icons.check_rounded : Icons.add_rounded,
-          color: selected ? AppColors.gold : Colors.white38,
+          color: selected ? accent : Colors.white38,
           size: 20,
         ),
       ),
@@ -2333,6 +2903,36 @@ class _InfoRow extends StatelessWidget {
         value,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           color: Colors.white54,
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionSettingRow extends StatelessWidget {
+  const _ActionSettingRow({
+    required this.title,
+    required this.value,
+    required this.onTap,
+  });
+
+  final String title;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: _SettingTile(
+        title: title,
+        trailing: Text(
+          value,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: AppColors.teal,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );
@@ -2426,6 +3026,12 @@ class _ThemeBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Light swatches need a dark check + a hairline outline so they don't
+    // disappear against the charcoal backdrop.
+    final lum = 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
+    final isLight = lum > 0.72;
+    final checkColor = isLight ? const Color(0xFF1A1814) : Colors.white;
+
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -2435,18 +3041,24 @@ class _ThemeBubble extends StatelessWidget {
         decoration: BoxDecoration(
           color: color,
           shape: BoxShape.circle,
+          border: isLight
+              ? Border.all(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  width: 1,
+                )
+              : null,
           boxShadow: selected
               ? [
                   BoxShadow(
-                    color: color.withValues(alpha: 0.6),
-                    blurRadius: 12,
-                    spreadRadius: 2,
+                    color: color.withValues(alpha: 0.55),
+                    blurRadius: 14,
+                    spreadRadius: 1,
                   ),
                 ]
               : null,
         ),
         child: selected
-            ? const Icon(Icons.check_rounded, color: Colors.white, size: 18)
+            ? Icon(Icons.check_rounded, color: checkColor, size: size * 0.42)
             : null,
       ),
     );
@@ -2458,12 +3070,14 @@ class _PaletteRow extends StatelessWidget {
     required this.title,
     required this.color,
     this.selected = false,
+    this.accent,
     this.onTap,
   });
 
   final String title;
   final Color color;
   final bool selected;
+  final Color? accent;
   final VoidCallback? onTap;
 
   @override
@@ -2479,17 +3093,18 @@ class _PaletteRow extends StatelessWidget {
           decoration: BoxDecoration(
             color: color,
             shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: color.withValues(alpha: 0.5),
-                blurRadius: 6,
-                spreadRadius: 1,
-              ),
-            ],
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.18),
+              width: 0.8,
+            ),
           ),
         ),
         trailing: selected
-            ? Icon(Icons.check_circle_rounded, color: AppColors.gold)
+            ? Icon(
+                Icons.check_rounded,
+                color: accent ?? AppColors.gold,
+                size: 18,
+              )
             : null,
       ),
     );
@@ -2499,16 +3114,18 @@ class _PaletteRow extends StatelessWidget {
 class _ThemeModeSelector extends StatelessWidget {
   const _ThemeModeSelector({
     required this.selectedMode,
+    required this.accent,
     required this.onSelected,
   });
 
   final PlannerThemeMode selectedMode;
+  final Color accent;
   final ValueChanged<PlannerThemeMode> onSelected;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 20),
+      margin: const EdgeInsets.only(bottom: 4),
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.08),
@@ -2525,9 +3142,15 @@ class _ThemeModeSelector extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   decoration: BoxDecoration(
                     color: mode == selectedMode
-                        ? Colors.white.withValues(alpha: 0.18)
+                        ? accent.withValues(alpha: 0.22)
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(16),
+                    border: mode == selectedMode
+                        ? Border.all(
+                            color: accent.withValues(alpha: 0.55),
+                            width: 1,
+                          )
+                        : null,
                   ),
                   child: Text(
                     mode.label.toUpperCase(),
@@ -2535,7 +3158,7 @@ class _ThemeModeSelector extends StatelessWidget {
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
                       color: mode == selectedMode
                           ? Colors.white
-                          : Colors.white38,
+                          : Colors.white.withValues(alpha: 0.42),
                       fontSize: 11,
                     ),
                   ),
@@ -2548,16 +3171,20 @@ class _ThemeModeSelector extends StatelessWidget {
   }
 }
 
-class _TinyToolbar extends StatelessWidget {
+class _TinyToolbar extends ConsumerWidget {
   const _TinyToolbar({required this.title});
 
   final String title;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final accent = (ref.watch(appPreferencesControllerProvider).asData?.value ??
+            AppPreferences.defaults())
+        .accentPalette
+        .color;
     return Row(
       children: [
-        const Icon(Icons.arrow_back_rounded, color: AppColors.gold, size: 18),
+        Icon(Icons.arrow_back_rounded, color: accent, size: 18),
         const Spacer(),
         Text(
           title,
@@ -2566,7 +3193,11 @@ class _TinyToolbar extends StatelessWidget {
           ),
         ),
         const Spacer(),
-        const Icon(Icons.text_fields_rounded, color: Colors.white38, size: 18),
+        Icon(
+          Icons.text_fields_rounded,
+          color: Colors.white.withValues(alpha: 0.38),
+          size: 18,
+        ),
       ],
     );
   }
@@ -2888,7 +3519,7 @@ class _WelcomeSurfaceState extends State<_WelcomeSurface> {
       iconColor: AppColors.gold,
       title: 'Themes',
       body:
-          'Choose from Mono, Vivid, or Dark mode with a full accent palette.',
+          'Choose from Mono, Vivid, Muted, or Dark mode with a full accent palette.',
     ),
     _WelcomeSlide(
       icon: Icons.notifications_active_rounded,

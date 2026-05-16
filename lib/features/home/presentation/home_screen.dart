@@ -42,7 +42,7 @@ class _HomeLoaded extends ConsumerStatefulWidget {
 }
 
 class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
-  bool _isHourlyView = false;
+  bool? _hourlyViewOverride;
 
   PlannerState get state => widget.state;
 
@@ -56,7 +56,21 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
     final dayEvents = state.selectedDayEvents
         .where((event) => preferences.showAllDay || !event.isAllDay)
         .toList();
-    final colorCard = preferences.themeMode != PlannerThemeMode.mono;
+    final colorCard = preferences.matchTimelineColors;
+    final isHourlyView =
+        _hourlyViewOverride ??
+        preferences.timelineLayoutMode == 'Day Hourly';
+    final preferenceController = ref.read(
+      appPreferencesControllerProvider.notifier,
+    );
+    final accent = preferences.accentPalette.color;
+    final tones = context.plannerTones;
+    final timelineSurfaceColor = _timelineSurfaceColor(
+      context,
+      preferences,
+      state.selectedDate,
+      accent,
+    );
 
     return SafeArea(
       child: Padding(
@@ -66,8 +80,9 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
           children: [
             _TimelineRail(
               monthLabel: state.monthLabel,
-              days: state.railDays,
+              days: state.railDaysFor(preferences.daysAtAGlance),
               selectedDate: state.selectedDate,
+              accent: accent,
               onDaySelected: controller.selectDate,
             ),
             const SizedBox(width: 14),
@@ -81,10 +96,9 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                           return IconButton(
                             onPressed: () => Scaffold.of(context).openDrawer(),
                             style: IconButton.styleFrom(
-                              backgroundColor: Colors.white.withValues(
-                                alpha: 0.82,
-                              ),
-                              foregroundColor: AppColors.ink,
+                              backgroundColor: tones.surfaceRaised
+                                  .withValues(alpha: 0.92),
+                              foregroundColor: tones.ink,
                               fixedSize: const Size(42, 42),
                             ),
                             icon: const Icon(Icons.menu_rounded),
@@ -95,15 +109,16 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                       Text(
                         'TODAY',
                         style: textTheme.labelLarge?.copyWith(
-                          color: AppColors.mutedInk,
+                          color: tones.mutedInk,
                         ),
                       ),
                       const Spacer(),
                       IconButton(
                         onPressed: controller.jumpToToday,
                         style: IconButton.styleFrom(
-                          backgroundColor: Colors.white.withValues(alpha: 0.82),
-                          foregroundColor: AppColors.ink,
+                          backgroundColor: tones.surfaceRaised
+                              .withValues(alpha: 0.92),
+                          foregroundColor: tones.ink,
                           fixedSize: const Size(42, 42),
                         ),
                         icon: const Icon(Icons.today_rounded),
@@ -114,13 +129,13 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                   Expanded(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color: AppColors.surface,
+                        color: timelineSurfaceColor,
                         borderRadius: BorderRadius.circular(32),
-                        boxShadow: const [
+                        boxShadow: [
                           BoxShadow(
-                            color: AppColors.shadow,
+                            color: tones.shadow,
                             blurRadius: 28,
-                            offset: Offset(0, 10),
+                            offset: const Offset(0, 10),
                           ),
                         ],
                       ),
@@ -136,37 +151,56 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                                   style: textTheme.displayMedium?.copyWith(
                                     fontSize: 26,
                                     letterSpacing: -0.9,
+                                    color: tones.ink,
                                   ),
                                 ),
                                 Text(
                                   state.selectedDateSubhead,
                                   style: textTheme.labelLarge?.copyWith(
-                                    color: AppColors.mutedInk,
+                                    color: tones.mutedInk,
                                   ),
                                 ),
+                                if (preferences.showWeather) ...[
+                                  const SizedBox(height: 14),
+                                  _OfflineBriefingCard(
+                                    date: state.selectedDate,
+                                    events: dayEvents,
+                                    preferences: preferences,
+                                  ),
+                                ],
                                 const SizedBox(height: 20),
                                 Row(
                                   children: [
                                     Text(
                                       'SCHEDULE',
                                       style: textTheme.labelLarge?.copyWith(
-                                        color: AppColors.mutedInk,
+                                        color: tones.mutedInk,
                                       ),
                                     ),
                                     const Spacer(),
                                     GestureDetector(
-                                      onTap: () => setState(
-                                        () => _isHourlyView = !_isHourlyView,
-                                      ),
+                                      onTap: () {
+                                        final nextHourly = !isHourlyView;
+                                        setState(() {
+                                          _hourlyViewOverride = nextHourly;
+                                        });
+                                        preferenceController
+                                            .setStringPreference(
+                                          PreferenceKeys.timelineLayoutMode,
+                                          nextHourly
+                                              ? 'Day Hourly'
+                                              : 'Traditional',
+                                        );
+                                      },
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(
                                           horizontal: 10,
                                           vertical: 5,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: _isHourlyView
-                                              ? AppColors.charcoal
-                                              : AppColors.line,
+                                          color: isHourlyView
+                                              ? tones.ink
+                                              : tones.line,
                                           borderRadius: BorderRadius.circular(
                                             999,
                                           ),
@@ -175,24 +209,24 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Icon(
-                                              _isHourlyView
+                                              isHourlyView
                                                   ? Icons.access_time_rounded
                                                   : Icons.view_agenda_rounded,
                                               size: 12,
-                                              color: _isHourlyView
-                                                  ? Colors.white
-                                                  : AppColors.mutedInk,
+                                              color: isHourlyView
+                                                  ? tones.surface
+                                                  : tones.mutedInk,
                                             ),
                                             const SizedBox(width: 5),
                                             Text(
-                                              _isHourlyView
+                                              isHourlyView
                                                   ? 'Hourly'
                                                   : 'List',
                                               style: textTheme.labelSmall
                                                   ?.copyWith(
-                                                color: _isHourlyView
-                                                    ? Colors.white
-                                                    : AppColors.mutedInk,
+                                                color: isHourlyView
+                                                    ? tones.surface
+                                                    : tones.mutedInk,
                                                 fontSize: 10,
                                               ),
                                             ),
@@ -206,7 +240,7 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                                 Expanded(
                                   child: dayEvents.isEmpty
                                       ? const _EmptyDayState()
-                                      : _isHourlyView
+                                      : isHourlyView
                                           ? _HourlyTimeline(
                                               events: dayEvents,
                                               state: state,
@@ -294,8 +328,8 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                                 onPressed: () =>
                                     _openCreateEventSheet(context, ref, state),
                                 elevation: 0,
-                                backgroundColor: Colors.white,
-                                foregroundColor: AppColors.ink,
+                                backgroundColor: tones.surfaceRaised,
+                                foregroundColor: tones.ink,
                                 child: const Icon(Icons.add_rounded),
                               ),
                             ),
@@ -310,6 +344,56 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
         ),
       ),
     );
+  }
+
+  Color _timelineSurfaceColor(
+    BuildContext context,
+    AppPreferences preferences,
+    DateTime selectedDate,
+    Color accent,
+  ) {
+    final base = Theme.of(context).colorScheme.surface;
+    final today = DateTime.now();
+    final selected = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+    );
+    final normalizedToday = DateTime(today.year, today.month, today.day);
+    final isToday = selected == normalizedToday;
+    final isPast = selected.isBefore(normalizedToday);
+    final isWeekend =
+        selectedDate.weekday == DateTime.saturday ||
+        selectedDate.weekday == DateTime.sunday;
+    final isAlternate = selectedDate.day.isEven;
+    final strength = preferences.heavyShading ? 0.11 : 0.055;
+
+    if (preferences.shadeToday && isToday) {
+      return Color.alphaBlend(
+        accent.withValues(alpha: strength),
+        base,
+      );
+    }
+    if (preferences.shadePastDays && isPast) {
+      return Color.alphaBlend(
+        AppColors.graphite.withValues(alpha: strength),
+        base,
+      );
+    }
+    if (preferences.shadeWeekends && isWeekend) {
+      return Color.alphaBlend(
+        AppColors.lilac.withValues(alpha: strength),
+        base,
+      );
+    }
+    if (preferences.shadeAlternateDays && isAlternate) {
+      return Color.alphaBlend(
+        AppColors.teal.withValues(alpha: strength * 0.75),
+        base,
+      );
+    }
+
+    return base;
   }
 
   Future<void> _openCreateEventSheet(
@@ -374,12 +458,14 @@ class _TimelineRail extends StatelessWidget {
     required this.monthLabel,
     required this.days,
     required this.selectedDate,
+    required this.accent,
     required this.onDaySelected,
   });
 
   final String monthLabel;
   final List<PlannerDay> days;
   final DateTime selectedDate;
+  final Color accent;
   final ValueChanged<DateTime> onDaySelected;
 
   @override
@@ -393,7 +479,7 @@ class _TimelineRail extends StatelessWidget {
           Expanded(
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: AppColors.charcoal,
+                color: context.plannerTones.rail,
                 borderRadius: BorderRadius.circular(32),
                 boxShadow: const [
                   BoxShadow(
@@ -420,7 +506,11 @@ class _TimelineRail extends StatelessWidget {
                                 child: Text(
                                   monthLabel,
                                   style: textTheme.labelLarge?.copyWith(
-                                    color: const Color(0xFFF0D58B),
+                                    color: Color.lerp(
+                                      accent,
+                                      Colors.white,
+                                      0.18,
+                                    ),
                                     letterSpacing: 1.5,
                                   ),
                                 ),
@@ -438,6 +528,7 @@ class _TimelineRail extends StatelessWidget {
                                       day.date,
                                       selectedDate,
                                     ),
+                                    accent: accent,
                                     onTap: () => onDaySelected(day.date),
                                   ),
                               ],
@@ -465,11 +556,13 @@ class _RailDayChip extends StatelessWidget {
   const _RailDayChip({
     required this.day,
     required this.isSelected,
+    required this.accent,
     required this.onTap,
   });
 
   final PlannerDay day;
   final bool isSelected;
+  final Color accent;
   final VoidCallback onTap;
 
   @override
@@ -481,7 +574,9 @@ class _RailDayChip extends StatelessWidget {
           Text(
             day.label,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: day.isToday ? AppColors.gold : Colors.white60,
+              color: day.isToday
+                  ? accent
+                  : Colors.white.withValues(alpha: 0.6),
               fontSize: 9,
             ),
           ),
@@ -494,7 +589,7 @@ class _RailDayChip extends StatelessWidget {
               color: isSelected
                   ? Colors.white
                   : day.isToday
-                      ? AppColors.gold.withValues(alpha: 0.22)
+                      ? accent.withValues(alpha: 0.22)
                       : Colors.transparent,
               borderRadius: BorderRadius.circular(10),
             ),
@@ -505,7 +600,7 @@ class _RailDayChip extends StatelessWidget {
                 color: isSelected
                     ? AppColors.ink
                     : day.isToday
-                        ? AppColors.gold
+                        ? accent
                         : Colors.white,
                 fontWeight: FontWeight.w700,
                 fontSize: 11,
@@ -518,6 +613,167 @@ class _RailDayChip extends StatelessWidget {
   }
 }
 
+class _OfflineBriefingCard extends StatelessWidget {
+  const _OfflineBriefingCard({
+    required this.date,
+    required this.events,
+    required this.preferences,
+  });
+
+  final DateTime date;
+  final List<PlannerEvent> events;
+  final AppPreferences preferences;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final tones = context.plannerTones;
+    final weather = _offlineWeatherFor(date);
+    final firstLocation = events
+        .map((event) => event.location.trim())
+        .firstWhere((location) => location.isNotEmpty, orElse: () => '');
+    final nextTimedEvent = events
+        .where((event) => !event.isAllDay)
+        .cast<PlannerEvent?>()
+        .firstWhere((event) => event != null, orElse: () => null);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: tones.surfaceRaised.withValues(alpha: tones.isDark ? 0.55 : 0.7),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: tones.line.withValues(alpha: 0.7)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: weather.color.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(weather.icon, color: weather.color, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${weather.temperature}°, ${weather.summary}',
+                  style: textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _briefingLine(firstLocation, nextTimedEvent),
+                  style: textTheme.bodyMedium,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          if (preferences.travelAlerts && firstLocation.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            Column(
+              children: [
+                Icon(
+                  _travelIcon(preferences.travelMode),
+                  color: tones.mutedInk,
+                  size: 18,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  preferences.travelMode,
+                  style: textTheme.labelLarge?.copyWith(
+                    color: tones.mutedInk,
+                    fontSize: 9,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _briefingLine(String firstLocation, PlannerEvent? nextTimedEvent) {
+    final locationPart = firstLocation.isEmpty
+        ? 'No saved location yet'
+        : 'Near $firstLocation';
+    if (nextTimedEvent == null) {
+      return '$locationPart. Offline daily briefing.';
+    }
+
+    return '$locationPart. Next: ${nextTimedEvent.title}.';
+  }
+
+  _OfflineWeather _offlineWeatherFor(DateTime date) {
+    final seed = (date.year + date.month * 7 + date.day * 13) % 4;
+    return switch (seed) {
+      0 => const _OfflineWeather(
+          icon: Icons.wb_sunny_rounded,
+          color: AppColors.gold,
+          temperature: 72,
+          summary: 'clear',
+        ),
+      1 => const _OfflineWeather(
+          icon: Icons.cloud_rounded,
+          color: AppColors.lilac,
+          temperature: 66,
+          summary: 'cloudy',
+        ),
+      2 => const _OfflineWeather(
+          icon: Icons.water_drop_rounded,
+          color: AppColors.teal,
+          temperature: 61,
+          summary: 'light rain',
+        ),
+      _ => const _OfflineWeather(
+          icon: Icons.air_rounded,
+          color: AppColors.sage,
+          temperature: 69,
+          summary: 'breezy',
+        ),
+    };
+  }
+
+  IconData _travelIcon(String mode) {
+    return switch (mode) {
+      'Walking' => Icons.directions_walk_rounded,
+      'Bicycling' || 'Cycling' => Icons.directions_bike_rounded,
+      'Transit' => Icons.directions_bus_rounded,
+      _ => Icons.directions_car_filled_rounded,
+    };
+  }
+}
+
+class _OfflineWeather {
+  const _OfflineWeather({
+    required this.icon,
+    required this.color,
+    required this.temperature,
+    required this.summary,
+  });
+
+  final IconData icon;
+  final Color color;
+  final int temperature;
+  final String summary;
+}
+
+/// Pick a foreground (text/icon) color that reads cleanly on top of [bg].
+/// Used by event cards when the card itself is painted in the calendar's color.
+Color _onColor(Color bg) {
+  final lum = 0.299 * bg.r + 0.587 * bg.g + 0.114 * bg.b;
+  return lum > 0.62 ? const Color(0xFF18171A) : Colors.white;
+}
+
 class _EventCard extends StatelessWidget {
   const _EventCard({
     required this.event,
@@ -525,6 +781,7 @@ class _EventCard extends StatelessWidget {
     required this.colorCard,
     required this.onTap,
     this.compact = false,
+    this.suppressLeftBar = false,
   });
 
   final PlannerEvent event;
@@ -532,15 +789,22 @@ class _EventCard extends StatelessWidget {
   final bool colorCard;
   final VoidCallback onTap;
   final bool compact;
+  final bool suppressLeftBar;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final bg = colorCard ? calendar.color : AppColors.surface;
-    final onBg = colorCard ? Colors.white : AppColors.ink;
+    final tones = context.plannerTones;
+    // The card always sits one tonal step above the timeline panel so it
+    // separates in every theme: brighter than `surface` in light modes, lighter
+    // than `surface` in dark mode.
+    final bg = colorCard ? calendar.color : tones.surfaceRaised;
+    // Pick title color by contrast against the actual card bg, not by mode.
+    final onBg = colorCard ? _onColor(calendar.color) : tones.ink;
     final onBgMuted = colorCard
-        ? Colors.white.withValues(alpha: 0.75)
-        : AppColors.mutedInk;
+        ? _onColor(calendar.color).withValues(alpha: 0.75)
+        : tones.mutedInk;
+    final showLeftBar = !colorCard && !suppressLeftBar;
 
     return InkWell(
       onTap: onTap,
@@ -549,11 +813,14 @@ class _EventCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(22),
+          border: !colorCard && tones.isDark
+              ? Border.all(color: tones.line, width: 0.6)
+              : null,
           boxShadow: [
             BoxShadow(
               color: colorCard
                   ? calendar.color.withValues(alpha: 0.38)
-                  : AppColors.shadow,
+                  : tones.shadow,
               blurRadius: 18,
               offset: const Offset(0, 6),
             ),
@@ -564,7 +831,7 @@ class _EventCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (!colorCard)
+              if (showLeftBar)
                 Container(
                   width: 5,
                   height: 56,
@@ -573,7 +840,7 @@ class _EventCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(999),
                   ),
                 ),
-              if (!colorCard) const SizedBox(width: 12),
+              if (showLeftBar) const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -684,23 +951,38 @@ class _HourlyTimeline extends StatelessWidget {
   final void Function(PlannerEvent) onEventTap;
 
   static const _hourHeight = 64.0;
+  // label(40) + gap(10) + divider(1) + gap(10)
+  static const _barLeft = 61.0;
+  static const _barWidth = 5.0;
+  static const _cardLeft = _barLeft + _barWidth + 8.0;
 
   int get _startHour {
-    if (events.isEmpty) return 8;
-    final earliest = events
-        .where((e) => !e.isAllDay)
+    final timedEvents = events.where((e) => !e.isAllDay).toList();
+    if (timedEvents.isEmpty) return 8;
+    final earliest = timedEvents
         .map((e) => e.startAt.hour)
         .fold(23, (a, b) => a < b ? a : b);
     return (earliest - 1).clamp(0, 23);
   }
 
   int get _endHour {
-    if (events.isEmpty) return 20;
-    final latest = events
-        .where((e) => !e.isAllDay)
+    final timedEvents = events.where((e) => !e.isAllDay).toList();
+    if (timedEvents.isEmpty) return 20;
+    final latest = timedEvents
         .map((e) => e.endAt.hour + (e.endAt.minute > 0 ? 1 : 0))
         .fold(0, (a, b) => a > b ? a : b);
     return (latest + 1).clamp(1, 24);
+  }
+
+  double _topFor(PlannerEvent e) {
+    final offsetMinutes =
+        (e.startAt.hour - _startHour) * 60 + e.startAt.minute;
+    return offsetMinutes / 60 * _hourHeight;
+  }
+
+  double _barHeightFor(PlannerEvent e) {
+    final minutes = e.endAt.difference(e.startAt).inMinutes;
+    return (minutes / 60 * _hourHeight).clamp(_hourHeight * 0.375, 24 * _hourHeight);
   }
 
   @override
@@ -710,10 +992,9 @@ class _HourlyTimeline extends StatelessWidget {
         selectedDate.month == now.month &&
         selectedDate.day == now.day;
     final hours = List.generate(_endHour - _startHour, (i) => _startHour + i);
-
-    // All-day events shown at top
     final allDayEvents = events.where((e) => e.isAllDay).toList();
     final timedEvents = events.where((e) => !e.isAllDay).toList();
+    final timelineHeight = (_endHour - _startHour) * _hourHeight;
 
     return ListView(
       physics: const BouncingScrollPhysics(),
@@ -747,72 +1028,91 @@ class _HourlyTimeline extends StatelessWidget {
             ),
           ),
         ],
-        Stack(
-          children: [
-            // Hour rows
-            Column(
-              children: [
-                for (final hour in hours)
-                  _HourRow(
-                    hour: hour,
-                    events: timedEvents
-                        .where((e) => e.startAt.hour == hour)
-                        .toList(),
-                    state: state,
-                    colorCard: colorCard,
-                    onEventTap: onEventTap,
-                  ),
-              ],
-            ),
-            // Current time line
-            if (isToday &&
-                now.hour >= _startHour &&
-                now.hour < _endHour)
-              Positioned(
-                top: (now.hour - _startHour) * _hourHeight +
-                    (now.minute / 60) * _hourHeight,
-                left: 46,
-                right: 0,
-                child: Row(
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: AppColors.coral,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    Expanded(
-                      child: Container(
-                        height: 1.5,
-                        color: AppColors.coral,
-                      ),
-                    ),
-                  ],
-                ),
+        SizedBox(
+          height: timelineHeight,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Hour grid: labels + vertical divider line
+              Column(
+                children: [
+                  for (final hour in hours)
+                    _HourGridRow(hour: hour),
+                ],
               ),
-          ],
+              // Duration bars — one per timed event, spans start→end
+              for (final e in timedEvents)
+                if (!colorCard)
+                  Positioned(
+                    left: _barLeft,
+                    width: _barWidth,
+                    top: _topFor(e),
+                    height: _barHeightFor(e),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: state.calendarById(e.calendarId).color,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+              // Event cards positioned at start time
+              for (final e in timedEvents)
+                Positioned(
+                  left: _cardLeft,
+                  right: 8,
+                  top: _topFor(e),
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: _EventCard(
+                      event: e,
+                      calendar: state.calendarById(e.calendarId),
+                      colorCard: colorCard,
+                      compact: true,
+                      suppressLeftBar: true,
+                      onTap: () => onEventTap(e),
+                    ),
+                  ),
+                ),
+              // Current time indicator
+              if (isToday &&
+                  now.hour >= _startHour &&
+                  now.hour < _endHour)
+                Positioned(
+                  top: (now.hour - _startHour) * _hourHeight +
+                      (now.minute / 60) * _hourHeight,
+                  left: _barLeft - 10,
+                  right: 0,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: AppColors.coral,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      Expanded(
+                        child: Container(
+                          height: 1.5,
+                          color: AppColors.coral,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ),
       ],
     );
   }
 }
 
-class _HourRow extends StatelessWidget {
-  const _HourRow({
-    required this.hour,
-    required this.events,
-    required this.state,
-    required this.colorCard,
-    required this.onEventTap,
-  });
+class _HourGridRow extends StatelessWidget {
+  const _HourGridRow({required this.hour});
 
   final int hour;
-  final List<PlannerEvent> events;
-  final PlannerState state;
-  final bool colorCard;
-  final void Function(PlannerEvent) onEventTap;
 
   String get _label {
     if (hour == 0) return '12\nAM';
@@ -823,7 +1123,9 @@ class _HourRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IntrinsicHeight(
+    final tones = context.plannerTones;
+    return SizedBox(
+      height: _HourlyTimeline._hourHeight,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -833,7 +1135,7 @@ class _HourRow extends StatelessWidget {
               _label,
               textAlign: TextAlign.right,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: AppColors.mutedInk,
+                color: tones.mutedInk,
                 fontSize: 10,
                 height: 1.2,
               ),
@@ -842,30 +1144,7 @@ class _HourRow extends StatelessWidget {
           const SizedBox(width: 10),
           Container(
             width: 1,
-            color: AppColors.line,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: events.isEmpty
-                  ? const SizedBox(height: _HourlyTimeline._hourHeight)
-                  : Column(
-                      children: [
-                        for (final e in events)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: _EventCard(
-                              event: e,
-                              calendar: state.calendarById(e.calendarId),
-                              colorCard: colorCard,
-                              compact: true,
-                              onTap: () => onEventTap(e),
-                            ),
-                          ),
-                      ],
-                    ),
-            ),
+            color: tones.line,
           ),
         ],
       ),
@@ -890,17 +1169,18 @@ class _BottomPlannerBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tones = context.plannerTones;
     return Center(
       child: Container(
         height: 54,
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.97),
+          color: tones.bottomBar.withValues(alpha: 0.97),
           borderRadius: BorderRadius.circular(20),
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
-              color: AppColors.shadow,
+              color: tones.shadow,
               blurRadius: 24,
-              offset: Offset(0, 8),
+              offset: const Offset(0, 8),
             ),
           ],
         ),
@@ -949,7 +1229,7 @@ class _BarButton extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14),
-        child: Icon(icon, color: AppColors.charcoal, size: 22),
+        child: Icon(icon, color: context.plannerTones.ink, size: 22),
       ),
     );
   }
@@ -968,11 +1248,12 @@ class _MetaPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tones = context.plannerTones;
     final bg = colorCard
         ? Colors.white.withValues(alpha: 0.2)
-        : AppColors.line;
-    final fg = colorCard ? Colors.white : AppColors.mutedInk;
-    final textColor = colorCard ? Colors.white : AppColors.ink;
+        : tones.line;
+    final fg = colorCard ? Colors.white : tones.mutedInk;
+    final textColor = colorCard ? Colors.white : tones.ink;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -1009,6 +1290,10 @@ class _PlannerMenu extends ConsumerWidget {
     final account =
         ref.watch(localAccountControllerProvider).asData?.value ??
         LocalAccountState.defaults();
+    final preferences =
+        ref.watch(appPreferencesControllerProvider).asData?.value ??
+        AppPreferences.defaults();
+    final accent = preferences.accentPalette.color;
     final items = [
       PlannerMenuDestination.search,
       PlannerMenuDestination.rsvp,
@@ -1033,7 +1318,7 @@ class _PlannerMenu extends ConsumerWidget {
           margin: const EdgeInsets.only(left: 8, top: 10, bottom: 10),
           padding: const EdgeInsets.fromLTRB(24, 28, 24, 28),
           decoration: BoxDecoration(
-            color: AppColors.charcoal,
+            color: context.plannerTones.menuSurface,
             borderRadius: BorderRadius.circular(32),
           ),
           child: Column(
@@ -1042,7 +1327,7 @@ class _PlannerMenu extends ConsumerWidget {
               Text(
                 '${account.remainingTrialDays}',
                 style: textTheme.displayMedium?.copyWith(
-                  color: AppColors.gold,
+                  color: accent,
                   fontSize: 42,
                 ),
               ),
@@ -1211,8 +1496,8 @@ class _HomeLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: CircularProgressIndicator(color: AppColors.charcoal),
+    return Center(
+      child: CircularProgressIndicator(color: context.plannerTones.ink),
     );
   }
 }

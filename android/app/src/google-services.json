@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "12112839104",
+    "project_id": "vplanner-notification",
+    "storage_bucket": "vplanner-notification.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:12112839104:android:e83c62b02e75711e878825",
+        "android_client_info": {
+          "package_name": "com.verticalplanner.vertical_planner"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDlyOLzAS6cBMTQajySxghl2XfLaSkvzEw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
