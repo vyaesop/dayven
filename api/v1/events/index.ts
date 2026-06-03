@@ -1,5 +1,5 @@
 import {
-  authorize, cors, getDb, HttpError, normalizeAttendees, validateEventBody,
+  authenticateUser, cors, getDb, HttpError, normalizeAttendees, validateEventBody,
   type VercelRequest, type VercelResponse,
 } from '../../_shared';
 
@@ -8,7 +8,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   try {
-    authorize(req);
+    const uid = await authenticateUser(req);
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
     const body = req.body as Record<string, unknown>;
@@ -19,7 +19,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const rows = await sql`
       INSERT INTO events
-        (id, title, is_all_day, start_at, end_at, location, url, note, reminder, repeat_rule, attendees, calendar_id)
+        (id, title, is_all_day, start_at, end_at, location, url, note,
+         reminder, repeat_rule, attendees, calendar_id, user_id)
       VALUES (
         ${id},
         ${body.title as string},
@@ -32,7 +33,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ${(body.reminder as string) ?? 'none'},
         ${(body.repeat_rule as string) ?? 'never'},
         ${JSON.stringify(normalizeAttendees(body.attendees))}::jsonb,
-        ${body.calendar_id as string}
+        ${body.calendar_id as string},
+        ${uid}
       )
       RETURNING id, title, is_all_day, start_at, end_at, location, url, note,
                 reminder, repeat_rule, attendees, calendar_id

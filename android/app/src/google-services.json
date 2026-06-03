@@ -12,7 +12,20 @@
           "package_name": "com.verticalplanner.vertical_planner"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "12112839104-cock88msfmob7sl9au6qv5o6vlvambci.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.verticalplanner.vertical_planner",
+            "certificate_hash": "980d1406e49da4351c0c7ca18abc73f23b0f0651"
+          }
+        },
+        {
+          "client_id": "12112839104-qglt9ua0kvl42efuphutu16m58d5l0gj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDlyOLzAS6cBMTQajySxghl2XfLaSkvzEw"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "12112839104-qglt9ua0kvl42efuphutu16m58d5l0gj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

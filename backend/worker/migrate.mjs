@@ -17,6 +17,7 @@ async function migrate() {
       name TEXT NOT NULL,
       color TEXT NOT NULL,
       position INTEGER NOT NULL DEFAULT 0,
+      user_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
@@ -37,26 +38,23 @@ async function migrate() {
       repeat_rule TEXT NOT NULL DEFAULT 'never',
       attendees JSONB NOT NULL DEFAULT '[]',
       calendar_id TEXT NOT NULL REFERENCES calendars(id) ON DELETE CASCADE,
+      user_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
   console.log('  events table OK');
 
-  await sql`CREATE INDEX IF NOT EXISTS idx_events_start_at ON events(start_at)`;
-  await sql`CREATE INDEX IF NOT EXISTS idx_events_calendar_id ON events(calendar_id)`;
-  console.log('  indexes OK');
+  // Add user_id to existing tables if columns are missing
+  await sql`ALTER TABLE calendars ADD COLUMN IF NOT EXISTS user_id TEXT`;
+  await sql`ALTER TABLE events    ADD COLUMN IF NOT EXISTS user_id TEXT`;
+  console.log('  user_id columns OK');
 
-  await sql`
-    INSERT INTO calendars (id, name, color, position) VALUES
-      ('cal-calendar', 'Calendar', '#5B8CFF', 0),
-      ('cal-exercise', 'Exercise', '#4CAF50', 1),
-      ('cal-family',   'Family',   '#FF9800', 2),
-      ('cal-friends',  'Friends',  '#E91E63', 3),
-      ('cal-work',     'Work',     '#607D8B', 4)
-    ON CONFLICT (id) DO NOTHING
-  `;
-  console.log('  default calendars seeded');
+  await sql`CREATE INDEX IF NOT EXISTS idx_events_start_at      ON events(start_at)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_events_calendar_id   ON events(calendar_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_calendars_user_id    ON calendars(user_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_events_user_id       ON events(user_id)`;
+  console.log('  indexes OK');
 
   console.log('\nMigration complete.');
 }

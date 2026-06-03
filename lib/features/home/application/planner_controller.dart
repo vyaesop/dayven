@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/config/app_config.dart';
@@ -21,7 +22,10 @@ final appConfigProvider = Provider<AppConfig>((ref) {
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   final config = ref.watch(appConfigProvider);
-  return HttpApiClient(config: config);
+  return HttpApiClient(
+    apiBaseUrl: config.apiBaseUrl,
+    tokenProvider: () async => FirebaseAuth.instance.currentUser?.getIdToken(),
+  );
 });
 
 final sqliteDatabaseFactoryProvider = Provider<SqliteDatabaseFactory>((ref) {

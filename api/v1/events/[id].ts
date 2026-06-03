@@ -1,5 +1,5 @@
 import {
-  authorize, cors, getDb, HttpError, normalizeAttendees, validateEventBody,
+  authenticateUser, cors, getDb, HttpError, normalizeAttendees, validateEventBody,
   type VercelRequest, type VercelResponse,
 } from '../../_shared';
 
@@ -8,14 +8,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   try {
-    authorize(req);
+    const uid = await authenticateUser(req);
     const id = req.query.id as string;
     if (!id) return res.status(400).json({ error: 'Missing event id' });
 
     const sql = getDb();
 
     if (req.method === 'DELETE') {
-      await sql`DELETE FROM events WHERE id = ${id}`;
+      await sql`DELETE FROM events WHERE id = ${id} AND user_id = ${uid}`;
       return res.status(200).json({ ok: true });
     }
 
@@ -38,7 +38,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           attendees   = ${JSON.stringify(normalizeAttendees(body.attendees))}::jsonb,
           calendar_id = ${body.calendar_id as string},
           updated_at  = now()
-        WHERE id = ${id}
+        WHERE id = ${id} AND user_id = ${uid}
         RETURNING id, title, is_all_day, start_at, end_at, location, url, note,
                   reminder, repeat_rule, attendees, calendar_id
       `;

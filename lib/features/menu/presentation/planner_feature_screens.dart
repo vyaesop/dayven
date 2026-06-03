@@ -1,10 +1,12 @@
 import 'dart:math' as math;
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_theme.dart';
+import '../../../core/auth/firebase_auth_service.dart';
 import '../../../core/notifications/push_notification_service.dart';
 import '../../../core/storage/storage_mode.dart';
 import '../../account/application/local_account_controller.dart';
@@ -1559,41 +1561,105 @@ class _SignInSurface extends ConsumerStatefulWidget {
 }
 
 class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
-  late final TextEditingController _nameController;
-  late final TextEditingController _emailController;
-  late final TextEditingController _passcodeController;
-  bool _communicationOptIn = false;
-  late bool _createMode;
-
-  @override
-  void initState() {
-    super.initState();
-    final account =
-        ref.read(localAccountControllerProvider).asData?.value ??
-        LocalAccountState.defaults();
-    _nameController = TextEditingController(text: account.displayName);
-    _emailController = TextEditingController(text: account.email);
-    _passcodeController = TextEditingController();
-    _communicationOptIn = account.communicationOptIn;
-    _createMode = !account.hasLocalPasscode || account.isSignedIn;
-  }
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isSignUp = true;
+  bool _loading = false;
+  String? _error;
 
   @override
   void dispose() {
-    _nameController.dispose();
     _emailController.dispose();
-    _passcodeController.dispose();
+    _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    if (email.isEmpty || password.isEmpty) {
+      setState(() => _error = 'Email and password are required.');
+      return;
+    }
+
+    setState(() { _loading = true; _error = null; });
+    try {
+      final auth = ref.read(firebaseAuthServiceProvider);
+      if (_isSignUp) {
+        await auth.signUpWithEmail(email, password);
+      } else {
+        await auth.signInWithEmail(email, password);
+      }
+      if (mounted) Navigator.of(context).pop();
+    } on FirebaseAuthException catch (e) {
+      if (mounted) setState(() { _error = _friendlyError(e.code); _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() { _error = 'Something went wrong. Try again.'; _loading = false; });
+    }
+  }
+
+  Future<void> _googleSignIn() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final auth = ref.read(firebaseAuthServiceProvider);
+      final result = await auth.signInWithGoogle();
+      if (result == null && mounted) setState(() => _loading = false);
+      if (result != null && mounted) Navigator.of(context).pop();
+    } on FirebaseAuthException catch (e) {
+      if (mounted) setState(() { _error = _friendlyError(e.code); _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() { _error = 'Google sign-in failed. Try again.'; _loading = false; });
+    }
+  }
+
+  String _friendlyError(String code) {
+    switch (code) {
+      case 'email-already-in-use': return 'That email is already registered. Try signing in.';
+      case 'user-not-found':       return 'No account with that email. Try signing up.';
+      case 'wrong-password':       return 'Incorrect password.';
+      case 'invalid-email':        return 'Enter a valid email address.';
+      case 'weak-password':        return 'Password must be at least 6 characters.';
+      case 'too-many-requests':    return 'Too many attempts. Wait a moment and try again.';
+      default:                     return 'Auth error ($code). Try again.';
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final account =
-        ref.watch(localAccountControllerProvider).asData?.value ??
-        LocalAccountState.defaults();
-    final controller = ref.read(localAccountControllerProvider.notifier);
-    final isUnlockMode = account.hasLocalPasscode && !_createMode;
+    final firebaseUser = ref.watch(firebaseUserProvider).asData?.value;
     final panelTheme = _lightPanelTheme(context);
+
+    // Already signed in — show signed-in state
+    if (firebaseUser != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _LightCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Signed in', style: panelTheme.textTheme.headlineMedium),
+                const SizedBox(height: 6),
+                Text(
+                  firebaseUser.email ?? firebaseUser.uid,
+                  style: panelTheme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      await ref.read(firebaseAuthServiceProvider).signOut();
+                    },
+                    child: const Text('Sign Out'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1603,169 +1669,92 @@ class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                account.isSignedIn
-                    ? 'Edit Profile'
-                    : isUnlockMode
-                    ? 'Sign In'
-                    : 'Create Local Profile',
+                _isSignUp ? 'Create account' : 'Sign in',
                 style: panelTheme.textTheme.headlineMedium,
               ),
               const SizedBox(height: 6),
               Text(
-                account.isSignedIn
-                    ? 'This profile is stored locally on device.'
-                    : isUnlockMode
-                    ? 'Use your local passcode to unlock this on-device profile.'
-                    : 'Create an on-device profile now. Cloud auth can be connected later.',
+                _isSignUp
+                    ? 'Your events sync across devices via the cloud.'
+                    : 'Welcome back — sign in to access your planner.',
                 style: panelTheme.textTheme.bodyMedium,
               ),
               const SizedBox(height: 18),
-              if (!isUnlockMode) ...[
-                TextField(
-                  controller: _nameController,
-                  decoration: const InputDecoration(hintText: 'Display name'),
-                ),
-                const SizedBox(height: 12),
-              ],
-              TextField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(hintText: 'Email address'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _passcodeController,
-                obscureText: true,
-                decoration: InputDecoration(
-                  hintText: isUnlockMode
-                      ? 'Local passcode'
-                      : account.hasLocalPasscode
-                      ? 'New local passcode (optional)'
-                      : 'Create local passcode',
+              Theme(
+                data: panelTheme,
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(hintText: 'Email address'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _passwordController,
+                      obscureText: true,
+                      decoration: InputDecoration(
+                        hintText: _isSignUp ? 'Password (min. 6 characters)' : 'Password',
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              if (!isUnlockMode) ...[
-                const SizedBox(height: 12),
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  value: _communicationOptIn,
-                  title: const Text('Receive updates and release notes'),
-                  onChanged: (value) {
-                    setState(() {
-                      _communicationOptIn = value;
-                    });
-                  },
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  style: panelTheme.textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xFFD05A5A),
+                  ),
                 ),
               ],
               const SizedBox(height: 16),
               GestureDetector(
-                onTap: () async {
-                  final name = _nameController.text.trim();
-                  final email = _emailController.text.trim();
-                  final passcode = _passcodeController.text.trim();
-
-                  if (email.isEmpty || (!isUnlockMode && name.isEmpty)) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Name and email are required.'),
-                      ),
-                    );
-                    return;
-                  }
-
-                  if (isUnlockMode) {
-                    final unlocked = await controller.unlock(
-                      email: email,
-                      localPasscode: passcode,
-                    );
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            unlocked
-                                ? 'Signed in locally.'
-                                : 'Email or passcode did not match.',
-                          ),
-                        ),
-                      );
-                    }
-                    if (unlocked && mounted) {
-                      _passcodeController.clear();
-                      setState(() => _createMode = true);
-                    }
-                    return;
-                  }
-
-                  if (!account.hasLocalPasscode && passcode.length < 4) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Use at least 4 characters.'),
-                      ),
-                    );
-                    return;
-                  }
-
-                  await controller.signIn(
-                    displayName: name,
-                    email: email,
-                    communicationOptIn: _communicationOptIn,
-                    localPasscode: passcode.isEmpty ? null : passcode,
-                  );
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Local profile saved on this device.'),
-                      ),
-                    );
-                  }
-                  _passcodeController.clear();
-                },
+                onTap: _loading ? null : _submit,
                 child: _InlineButton(
-                  label: isUnlockMode ? 'Sign In' : 'Save Profile',
+                  label: _loading
+                      ? 'Please wait…'
+                      : _isSignUp ? 'Create Account' : 'Sign In',
                   icon: Icons.arrow_forward_rounded,
                 ),
               ),
-              if (account.hasLocalPasscode) ...[
-                const SizedBox(height: 10),
+              const SizedBox(height: 10),
+              GestureDetector(
+                onTap: _loading ? null : _googleSignIn,
+                child: const _InlineButton(
+                  label: 'Continue with Google',
+                  icon: Icons.g_mobiledata_rounded,
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: _loading
+                    ? null
+                    : () => setState(() { _isSignUp = !_isSignUp; _error = null; }),
+                child: Text(
+                  _isSignUp
+                      ? 'Already have an account? Sign in'
+                      : "Don't have an account? Sign up",
+                ),
+              ),
+              if (!_isSignUp) ...[
                 TextButton(
-                  onPressed: isUnlockMode
-                      ? () => _showResetPasscodeSheet(context, controller)
-                      : () => setState(() => _createMode = false),
-                  child: Text(
-                    isUnlockMode ? 'Forgot passcode?' : 'Sign out view',
-                  ),
+                  onPressed: _loading
+                      ? null
+                      : () => _showResetPassword(context),
+                  child: const Text('Forgot password?'),
                 ),
               ],
-              const SizedBox(height: 10),
-              const _InlineButton(
-                label: 'Continue with Google (coming soon)',
-                icon: Icons.g_mobiledata_rounded,
-                muted: true,
-              ),
             ],
           ),
-        ),
-        const SizedBox(height: 18),
-        const _SettingsGroup(
-          title: 'Onboarding',
-          children: [
-            _InfoRow(title: 'Create profile', value: 'Local-first'),
-            _InfoRow(title: 'Email opt-in', value: 'Stored locally'),
-            _InfoRow(title: 'Passcode reset', value: 'Local'),
-            _InfoRow(title: 'Google sign-in', value: 'Pending integration'),
-          ],
         ),
       ],
     );
   }
 
-  Future<void> _showResetPasscodeSheet(
-    BuildContext context,
-    LocalAccountController controller,
-  ) {
-    final emailController = TextEditingController(text: _emailController.text);
-    final passcodeController = TextEditingController();
-
+  Future<void> _showResetPassword(BuildContext context) {
+    final ctrl = TextEditingController(text: _emailController.text);
     return showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1778,66 +1767,34 @@ class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
         child: SafeArea(
           top: false,
           child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              20,
-              18,
-              20,
-              MediaQuery.of(ctx).viewInsets.bottom + 20,
-            ),
+            padding: EdgeInsets.fromLTRB(20, 18, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Reset Local Passcode',
-                  style: Theme.of(ctx).textTheme.headlineMedium,
-                ),
+                Text('Reset Password', style: Theme.of(ctx).textTheme.headlineMedium),
                 const SizedBox(height: 14),
                 TextField(
-                  controller: emailController,
+                  controller: ctrl,
                   keyboardType: TextInputType.emailAddress,
                   decoration: const InputDecoration(hintText: 'Email address'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: passcodeController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    hintText: 'New local passcode',
-                  ),
                 ),
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
                     onPressed: () async {
-                      final passcode = passcodeController.text.trim();
-                      if (passcode.length < 4) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Use at least 4 characters.'),
-                          ),
-                        );
-                        return;
-                      }
-                      final updated = await controller.resetLocalPasscode(
-                        email: emailController.text,
-                        localPasscode: passcode,
-                      );
+                      final email = ctrl.text.trim();
+                      if (email.isEmpty) return;
+                      await ref.read(firebaseAuthServiceProvider).sendPasswordResetEmail(email);
                       if (ctx.mounted) Navigator.of(ctx).pop();
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              updated
-                                  ? 'Local passcode reset.'
-                                  : 'Email did not match this profile.',
-                            ),
-                          ),
+                          const SnackBar(content: Text('Password reset email sent.')),
                         );
                       }
                     },
-                    child: const Text('Reset Passcode'),
+                    child: const Text('Send Reset Email'),
                   ),
                 ),
               ],
@@ -1845,10 +1802,7 @@ class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
           ),
         ),
       ),
-    ).whenComplete(() {
-      emailController.dispose();
-      passcodeController.dispose();
-    });
+    ).whenComplete(ctrl.dispose);
   }
 }
 
@@ -3522,15 +3476,10 @@ class _LightCard extends StatelessWidget {
 }
 
 class _InlineButton extends StatelessWidget {
-  const _InlineButton({
-    required this.label,
-    required this.icon,
-    this.muted = false,
-  });
+  const _InlineButton({required this.label, required this.icon});
 
   final String label;
   final IconData icon;
-  final bool muted;
 
   @override
   Widget build(BuildContext context) {
@@ -3538,18 +3487,18 @@ class _InlineButton extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: muted ? AppColors.line : AppColors.teal,
+        color: AppColors.teal,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: muted ? AppColors.ink : Colors.white, size: 18),
+          Icon(icon, color: Colors.white, size: 18),
           const SizedBox(width: 8),
           Text(
             label,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: muted ? AppColors.ink : Colors.white,
+              color: Colors.white,
             ),
           ),
         ],

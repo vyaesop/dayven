@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { neon } from '@neondatabase/serverless';
+import { verifyFirebaseToken } from './_firebase_auth';
 
 export type { VercelRequest, VercelResponse };
 
@@ -9,12 +10,16 @@ export function getDb() {
   return neon(url);
 }
 
-export function authorize(req: VercelRequest): void {
-  const expected = (process.env.API_BEARER_TOKEN ?? '').trim();
-  if (!expected) return;
+export async function authenticateUser(req: VercelRequest): Promise<string> {
   const header = (req.headers['authorization'] ?? '') as string;
-  const provided = header.replace(/^Bearer\s+/i, '').trim();
-  if (provided !== expected) throw new HttpError(401, 'Unauthorized');
+  const token = header.replace(/^Bearer\s+/i, '').trim();
+  if (!token) throw new HttpError(401, 'Unauthorized');
+  try {
+    const { uid } = await verifyFirebaseToken(token);
+    return uid;
+  } catch (err) {
+    throw new HttpError(401, `Unauthorized: ${err instanceof Error ? err.message : 'invalid token'}`);
+  }
 }
 
 export function cors(res: VercelResponse): void {
@@ -31,9 +36,7 @@ export class HttpError extends Error {
 
 export function normalizeAttendees(input: unknown): string[] {
   if (!Array.isArray(input)) return [];
-  return [...new Set(
-    input.map((i) => String(i).trim()).filter((i) => i.length > 0),
-  )];
+  return [...new Set(input.map((i) => String(i).trim()).filter((i) => i.length > 0))];
 }
 
 export function parseDateOnly(value: string | string[] | undefined): Date {
