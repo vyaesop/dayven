@@ -1277,6 +1277,7 @@ class _PlannerMenu extends ConsumerWidget {
       PlannerMenuDestination.welcome,
       PlannerMenuDestination.help,
       PlannerMenuDestination.account,
+      // PlannerMenuDestination.paywall — hidden until RevenueCat billing is wired
     ];
 
     return Drawer(

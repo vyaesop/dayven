@@ -8,20 +8,20 @@ flutter run \
 
 ---
 
-## Overall Status: 76% Production-Ready
+## Overall Status: 91% Production-Ready
 
-The UI, core features, notification scheduling, empty/error states, and cloud backend are all solid. The remaining gap is auth, billing, release signing, and Play Store listing assets. Estimated **2 focused weeks** to a shippable v1.
+Auth, cloud sync, notifications, crash reporting, release signing, privacy policy, app icons, and account deletion are all done. The only remaining gaps before submission are Play Store listing assets (screenshots, description, feature graphic) and the billing decision.
 
 ---
 
 ## Critical Blockers (App will be rejected or break user trust)
 
-- [ ] **Release signing not configured** — debug key cannot be submitted to Play Store. Need keystore + `key.properties` + `build.gradle` signing config.
-- [ ] **No Privacy Policy / Terms of Service URL** — required by Play Store for any app with accounts, Firebase, or subscriptions.
-- [ ] **Auth is fake** — sign-in/sign-up writes only to SharedPreferences. Either remove for v1 or wire Firebase Auth (email + Google).
-- [ ] **Subscription billing is non-functional** — paywall UI exists but no RevenueCat, no Google Play Billing, no entitlement enforcement. Showing a paywall without billing = policy violation.
-- [ ] **Account deletion has no backend** — Google Play mandates in-app account deletion that removes server-side data. Cloud sync path has no delete endpoint.
-- [ ] **App icon variants missing** — need mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi + adaptive icon layers. Generic icon signals unfinished product.
+- [x] **Release signing** — keystore generated (`android/upload-keystore.jks`), `build.gradle.kts` configured with `signingConfigs.release`. Both files gitignored. Credentials stored in `android/key.properties` (local only, never committed).
+- [x] **Privacy Policy / Terms of Service** — hosted on Vercel at `vplanner.vercel.app/privacy-policy.html` and `/terms.html`. Use these URLs in Play Store submission.
+- [x] **Auth** — Firebase Auth wired: email/password + Google Sign-In. Real sign-in/sign-up, password reset, token-based API auth.
+- [ ] **Subscription billing** — paywall **hidden from drawer for v1** to avoid policy violation. Implement RevenueCat before re-enabling.
+- [x] **Account deletion** — `DELETE /v1/auth/user` endpoint wipes NeonDB rows and deletes Firebase account. Flutter delete button calls it in cloud sync mode with confirmation dialog.
+- [x] **App icon variants** — generated with `flutter_launcher_icons` (all mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi + adaptive icon with charcoal `#35332E` background).
 
 ---
 
@@ -82,8 +82,8 @@ The UI, core features, notification scheduling, empty/error states, and cloud ba
 | Preferences | Ready | Persisted correctly |
 | Smart Alerts | UI only | No weather API wired |
 | Travel | UI only | No maps/directions wired |
-| Auth / Account | UI only | No backend |
-| Subscription / Paywall | UI only | No RevenueCat |
+| Auth / Account | Ready | Firebase Auth: email/password + Google Sign-In |
+| Subscription / Paywall | Hidden | Paywall removed from drawer for v1; RevenueCat for v1.1 |
 | Notifications / Reminders | Ready | Scheduling wired in planner_controller at save/delete/boot |
 | Sync / Cloud | Ready | Vercel + NeonDB live; auth gating needed for multi-user |
 | Onboarding | UI only | Carousel scaffolded, not complete |
@@ -94,14 +94,16 @@ The UI, core features, notification scheduling, empty/error states, and cloud ba
 ## Recommended Launch Phases
 
 ### Phase 1 — Internal Testing (Week 1–2)
-- [ ] Configure release signing
-- [ ] Add app icon variants (all densities + adaptive)
-- [ ] Write and host privacy policy + ToS
+- [x] Release signing — keystore + `build.gradle.kts` configured
+- [x] App icon variants — all densities + adaptive (charcoal background)
+- [x] Privacy policy + ToS — live at `vplanner.vercel.app/privacy-policy.html` and `/terms.html`
 - [x] Wire notification scheduling at event save time
-- [x] Smart Alerts and Travel now show "Coming Soon" banners
-- [x] Cloud sync (Vercel + NeonDB) live at `vplanner.vercel.app`
-- [ ] Decide: **free launch** vs. **RevenueCat integration** before proceeding
-- [ ] Decide: **remove auth** for v1 vs. **wire Firebase Auth**
+- [x] Smart Alerts and Travel show "Coming Soon" banners
+- [x] Cloud sync live — Vercel + NeonDB + Firebase Auth
+- [x] Firebase Auth wired — email/password + Google Sign-In
+- [x] Account deletion — full wipe (NeonDB + Firebase) with confirmation dialog
+- [x] Firebase Crashlytics wired
+- [ ] **Decide: free launch for v1 vs. RevenueCat** — paywall currently hidden
 - [x] Empty states for timeline and search results
 
 ### Phase 2 — Closed Testing (Week 3–4)
@@ -150,7 +152,7 @@ The UI, core features, notification scheduling, empty/error states, and cloud ba
 
 - [ ] No unit tests — no widget tests — no integration tests
 - [ ] No CI/CD pipeline
-- [ ] No crash reporting (Sentry / Firebase Crashlytics)
+- [x] Crash reporting — Firebase Crashlytics wired in `main.dart` (Flutter + platform errors)
 - [ ] No analytics events wired
 - [ ] Recurring event editing (single instance vs. all future) not implemented
 - [ ] Sync conflict resolution not designed

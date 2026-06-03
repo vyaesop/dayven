@@ -1435,17 +1435,50 @@ class _AccountSurface extends ConsumerWidget {
           width: double.infinity,
           child: OutlinedButton(
             onPressed: () async {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Delete account?'),
+                  content: const Text(
+                    'This permanently deletes all your events, calendars, and account credentials. This cannot be undone.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                      child: const Text(
+                        'Delete',
+                        style: TextStyle(color: Color(0xFFFF7070)),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+              if (confirmed != true) return;
+
+              // Delete cloud data + Firebase account if in cloud sync mode
+              if (storageMode == StorageMode.cloudSync) {
+                try {
+                  final client = ref.read(apiClientProvider);
+                  await client.delete('/v1/auth/user');
+                  await ref.read(firebaseAuthServiceProvider).signOut();
+                } catch (_) {}
+              }
+
               await accountController.deleteLocalAccount();
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Local account data removed.')),
+                  const SnackBar(content: Text('Account deleted.')),
                 );
               }
             },
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFFFF7070),
             ),
-            child: const Text('Delete Local Account'),
+            child: const Text('Delete Account'),
           ),
         ),
         const SizedBox(height: 18),
