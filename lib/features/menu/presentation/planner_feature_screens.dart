@@ -206,7 +206,11 @@ class _FeatureScaffold extends ConsumerWidget {
                     ),
                   ),
                   const Spacer(),
-                  Icon(destination.icon, color: Colors.white.withValues(alpha: 0.32), size: 20),
+                  Icon(
+                    destination.icon,
+                    color: Colors.white.withValues(alpha: 0.32),
+                    size: 20,
+                  ),
                 ],
               ),
               const SizedBox(height: 20),
@@ -316,14 +320,15 @@ class _GeneralSettings extends StatelessWidget {
         const _SettingsGroup(
           title: 'Preferences',
           children: [
-            _SwitchRow(title: 'Sync preferences between my devices', value: false),
+            _SwitchRow(
+              title: 'Sync preferences between my devices',
+              value: false,
+            ),
           ],
         ),
         const _SettingsGroup(
           title: 'Status Bar',
-          children: [
-            _SwitchRow(title: 'Status Bar Visible', value: true),
-          ],
+          children: [_SwitchRow(title: 'Status Bar Visible', value: true)],
         ),
         _SettingsGroup(
           title: 'Day View',
@@ -335,7 +340,11 @@ class _GeneralSettings extends StatelessWidget {
               onChanged: (v) =>
                   notifier.setBoolPreference(PreferenceKeys.showActions, v),
             ),
-            const _SwitchRow(title: 'On This Day', value: true, note: 'On empty days'),
+            const _SwitchRow(
+              title: 'On This Day',
+              value: true,
+              note: 'On empty days',
+            ),
             _SwitchRow(
               title: 'Weather card',
               note: 'Show weather + briefing on the day view',
@@ -412,10 +421,8 @@ class _TimelineSettingsState extends State<_TimelineSettings> {
             _SwitchRow(
               title: 'Show event invites on timeline',
               value: prefs.timelineInvites,
-              onChanged: (v) => notifier.setBoolPreference(
-                PreferenceKeys.timelineInvites,
-                v,
-              ),
+              onChanged: (v) =>
+                  notifier.setBoolPreference(PreferenceKeys.timelineInvites, v),
             ),
           ],
         ),
@@ -433,26 +440,20 @@ class _TimelineSettingsState extends State<_TimelineSettings> {
             _SwitchRow(
               title: 'The past',
               value: prefs.shadePastDays,
-              onChanged: (v) => notifier.setBoolPreference(
-                PreferenceKeys.shadePastDays,
-                v,
-              ),
+              onChanged: (v) =>
+                  notifier.setBoolPreference(PreferenceKeys.shadePastDays, v),
             ),
             _SwitchRow(
               title: 'Weekends',
               value: prefs.shadeWeekends,
-              onChanged: (v) => notifier.setBoolPreference(
-                PreferenceKeys.shadeWeekends,
-                v,
-              ),
+              onChanged: (v) =>
+                  notifier.setBoolPreference(PreferenceKeys.shadeWeekends, v),
             ),
             _SwitchRow(
               title: 'Today',
               value: prefs.shadeToday,
-              onChanged: (v) => notifier.setBoolPreference(
-                PreferenceKeys.shadeToday,
-                v,
-              ),
+              onChanged: (v) =>
+                  notifier.setBoolPreference(PreferenceKeys.shadeToday, v),
             ),
           ],
         ),
@@ -462,10 +463,8 @@ class _TimelineSettingsState extends State<_TimelineSettings> {
             _SwitchRow(
               title: 'On',
               value: prefs.heavyShading,
-              onChanged: (v) => notifier.setBoolPreference(
-                PreferenceKeys.heavyShading,
-                v,
-              ),
+              onChanged: (v) =>
+                  notifier.setBoolPreference(PreferenceKeys.heavyShading, v),
             ),
           ],
         ),
@@ -488,10 +487,8 @@ class _TimelineSettingsState extends State<_TimelineSettings> {
             _SwitchRow(
               title: 'Show button on timeline',
               value: prefs.showActions,
-              onChanged: (v) => notifier.setBoolPreference(
-                PreferenceKeys.showActions,
-                v,
-              ),
+              onChanged: (v) =>
+                  notifier.setBoolPreference(PreferenceKeys.showActions, v),
             ),
           ],
         ),
@@ -502,10 +499,8 @@ class _TimelineSettingsState extends State<_TimelineSettings> {
               _ChoiceRow(
                 title: '$n',
                 selected: prefs.daysAtAGlance == n,
-                onTap: () => notifier.setIntPreference(
-                  PreferenceKeys.daysAtAGlance,
-                  n,
-                ),
+                onTap: () =>
+                    notifier.setIntPreference(PreferenceKeys.daysAtAGlance, n),
               ),
           ],
         ),
@@ -529,25 +524,20 @@ class _TimelineSettingsState extends State<_TimelineSettings> {
             _SwitchRow(
               title: 'Hide all-day events',
               value: !prefs.showAllDay,
-              onChanged: (v) => notifier.setBoolPreference(
-                PreferenceKeys.showAllDay,
-                !v,
-              ),
+              onChanged: (v) =>
+                  notifier.setBoolPreference(PreferenceKeys.showAllDay, !v),
             ),
             _SwitchRow(
               title: 'Hide birthdays',
               value: !prefs.showBirthdays,
-              onChanged: (v) => notifier.setBoolPreference(
-                PreferenceKeys.showBirthdays,
-                !v,
-              ),
+              onChanged: (v) =>
+                  notifier.setBoolPreference(PreferenceKeys.showBirthdays, !v),
             ),
           ],
         ),
       ],
     );
   }
-
 }
 
 // ─── Calendar Settings ────────────────────────────────────────────────────────
@@ -845,6 +835,10 @@ class _SmartAlertsSurface extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const _ComingSoonBanner(
+          message:
+              'Toggles are saved. Weather-based delivery and push scheduling arrive in v1.1.',
+        ),
         // 5-icon grid matching the design
         Padding(
           padding: const EdgeInsets.only(bottom: 20),
@@ -958,7 +952,8 @@ class _SmartAlertsSurface extends ConsumerWidget {
             for (final hour in [6, 7, 8])
               _ChoiceRow(
                 title: _formatBriefingTime(hour, 0),
-                selected: prefs.dailyBriefingHour == hour &&
+                selected:
+                    prefs.dailyBriefingHour == hour &&
                     prefs.dailyBriefingMinute == 0,
                 onTap: () {
                   notifier.setIntPreference(
@@ -973,7 +968,8 @@ class _SmartAlertsSurface extends ConsumerWidget {
               ),
             _ChoiceRow(
               title: _formatBriefingTime(8, 30),
-              selected: prefs.dailyBriefingHour == 8 &&
+              selected:
+                  prefs.dailyBriefingHour == 8 &&
                   prefs.dailyBriefingMinute == 30,
               onTap: () {
                 notifier.setIntPreference(PreferenceKeys.dailyBriefingHour, 8);
@@ -992,8 +988,10 @@ class _SmartAlertsSurface extends ConsumerWidget {
               title: 'Upcoming reminders',
               value: prefs.upcomingReminders,
               note: '15 minutes before',
-              onChanged: (v) =>
-                  notifier.setBoolPreference(PreferenceKeys.upcomingReminders, v),
+              onChanged: (v) => notifier.setBoolPreference(
+                PreferenceKeys.upcomingReminders,
+                v,
+              ),
             ),
           ],
         ),
@@ -1010,8 +1008,9 @@ class _SmartAlertsSurface extends ConsumerWidget {
                   children: [
                     _InfoRow(
                       title: 'Push notifications',
-                      value:
-                          value?.enabled == true ? 'Ready' : 'Not configured',
+                      value: value?.enabled == true
+                          ? 'Ready'
+                          : 'Not configured',
                     ),
                     _InfoRow(
                       title: 'Permission',
@@ -1022,10 +1021,7 @@ class _SmartAlertsSurface extends ConsumerWidget {
                       value: token.isEmpty ? 'Waiting' : _shortToken(token),
                     ),
                     if (value?.lastTitle.isNotEmpty == true)
-                      _InfoRow(
-                        title: 'Last message',
-                        value: value!.lastTitle,
-                      ),
+                      _InfoRow(title: 'Last message', value: value!.lastTitle),
                     if (value?.error.isNotEmpty == true)
                       _InfoRow(
                         title: 'Setup note',
@@ -1135,11 +1131,7 @@ class _AlertTypeCard extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              icon,
-              color: enabled ? color : Colors.white38,
-              size: 28,
-            ),
+            Icon(icon, color: enabled ? color : Colors.white38, size: 28),
             const SizedBox(height: 8),
             Text(
               label,
@@ -1175,11 +1167,12 @@ class _TextSizeSurfaceState extends ConsumerState<_TextSizeSurface> {
     super.initState();
     final prefs = ref.read(appPreferencesControllerProvider).asData?.value;
     if (prefs != null) {
-      final closest = _scales.indexed
-          .reduce((a, b) =>
-              (a.$2 - prefs.textScale).abs() < (b.$2 - prefs.textScale).abs()
-                  ? a
-                  : b);
+      final closest = _scales.indexed.reduce(
+        (a, b) =>
+            (a.$2 - prefs.textScale).abs() < (b.$2 - prefs.textScale).abs()
+            ? a
+            : b,
+      );
       _selectedIndex = closest.$1;
     }
   }
@@ -1251,9 +1244,7 @@ class _TextSizeSurfaceState extends ConsumerState<_TextSizeSurface> {
         const SizedBox(height: 24),
         const _SettingsGroup(
           title: 'Dynamic Type',
-          children: [
-            _SwitchRow(title: 'Use device text size', value: true),
-          ],
+          children: [_SwitchRow(title: 'Use device text size', value: true)],
         ),
         _SettingsGroup(
           title: 'Preview',
@@ -1292,6 +1283,10 @@ class _TravelSurfaceState extends ConsumerState<_TravelSurface> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const _ComingSoonBanner(
+          message:
+              'Preferences are saved. Live directions and time-to-leave alerts require map integration in v1.1.',
+        ),
         const _HeroPanel(
           title: 'Time to leave',
           body:
@@ -1598,6 +1593,7 @@ class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
         LocalAccountState.defaults();
     final controller = ref.read(localAccountControllerProvider.notifier);
     final isUnlockMode = account.hasLocalPasscode && !_createMode;
+    final panelTheme = _lightPanelTheme(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1610,18 +1606,18 @@ class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
                 account.isSignedIn
                     ? 'Edit Profile'
                     : isUnlockMode
-                        ? 'Sign In'
-                        : 'Create Local Profile',
-                style: Theme.of(context).textTheme.headlineMedium,
+                    ? 'Sign In'
+                    : 'Create Local Profile',
+                style: panelTheme.textTheme.headlineMedium,
               ),
               const SizedBox(height: 6),
               Text(
                 account.isSignedIn
                     ? 'This profile is stored locally on device.'
                     : isUnlockMode
-                        ? 'Use your local passcode to unlock this on-device profile.'
-                        : 'Create an on-device profile now. Cloud auth can be connected later.',
-                style: Theme.of(context).textTheme.bodyMedium,
+                    ? 'Use your local passcode to unlock this on-device profile.'
+                    : 'Create an on-device profile now. Cloud auth can be connected later.',
+                style: panelTheme.textTheme.bodyMedium,
               ),
               const SizedBox(height: 18),
               if (!isUnlockMode) ...[
@@ -1644,8 +1640,8 @@ class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
                   hintText: isUnlockMode
                       ? 'Local passcode'
                       : account.hasLocalPasscode
-                          ? 'New local passcode (optional)'
-                          : 'Create local passcode',
+                      ? 'New local passcode (optional)'
+                      : 'Create local passcode',
                 ),
               ),
               if (!isUnlockMode) ...[
@@ -1870,11 +1866,26 @@ class _SupportSurfaceState extends ConsumerState<_SupportSurface> {
   String? _expanded;
 
   static const _faqItems = [
-    ('What can I do with the local plan?', 'Create unlimited events, calendars and reminders — all stored on your device.'),
-    ('How do I add people to an event?', 'Open any event, tap Edit, and type names in the People field separated by commas.'),
-    ('Can I sync across devices?', 'Cloud sync is coming in v1.0 — select the Cloud Sync storage mode when prompted.'),
-    ('How do I change my theme?', 'Go to Themes in the menu and pick any of the 29 accent palettes or choose Mono, Vivid, Muted, or Dark mode.'),
-    ('How do I reset preferences?', 'Go to Preferences → General and tap Reset All Preferences.'),
+    (
+      'What can I do with the local plan?',
+      'Create unlimited events, calendars and reminders — all stored on your device.',
+    ),
+    (
+      'How do I add people to an event?',
+      'Open any event, tap Edit, and type names in the People field separated by commas.',
+    ),
+    (
+      'Can I sync across devices?',
+      'Cloud sync is coming in v1.0 — select the Cloud Sync storage mode when prompted.',
+    ),
+    (
+      'How do I change my theme?',
+      'Go to Themes in the menu and pick any of the 29 accent palettes or choose Mono, Vivid, Muted, or Dark mode.',
+    ),
+    (
+      'How do I reset preferences?',
+      'Go to Preferences → General and tap Reset All Preferences.',
+    ),
   ];
 
   @override
@@ -1896,15 +1907,18 @@ class _SupportSurfaceState extends ConsumerState<_SupportSurface> {
               label: 'Contact Support',
               color: AppColors.teal,
               expanded: _expanded == 'contact',
-              onTap: () => setState(() =>
-                  _expanded = _expanded == 'contact' ? null : 'contact'),
+              onTap: () => setState(
+                () => _expanded = _expanded == 'contact' ? null : 'contact',
+              ),
             ),
             if (_expanded == 'contact')
               _SupportComposerInline(
                 hint: 'Tell us what went wrong or what you need.',
                 onSubmit: (msg) async {
                   await controller.submit(
-                      type: SupportEntryType.contact, message: msg);
+                    type: SupportEntryType.contact,
+                    message: msg,
+                  );
                   if (mounted) setState(() => _expanded = null);
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -1918,15 +1932,18 @@ class _SupportSurfaceState extends ConsumerState<_SupportSurface> {
               label: 'Feature Request',
               color: AppColors.coral,
               expanded: _expanded == 'feature',
-              onTap: () => setState(() =>
-                  _expanded = _expanded == 'feature' ? null : 'feature'),
+              onTap: () => setState(
+                () => _expanded = _expanded == 'feature' ? null : 'feature',
+              ),
             ),
             if (_expanded == 'feature')
               _SupportComposerInline(
                 hint: 'Describe a feature you would love to see.',
                 onSubmit: (msg) async {
                   await controller.submit(
-                      type: SupportEntryType.featureRequest, message: msg);
+                    type: SupportEntryType.featureRequest,
+                    message: msg,
+                  );
                   if (mounted) setState(() => _expanded = null);
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -1945,8 +1962,8 @@ class _SupportSurfaceState extends ConsumerState<_SupportSurface> {
               label: 'FAQ',
               color: AppColors.gold,
               expanded: _expanded == 'faq',
-              onTap: () => setState(
-                  () => _expanded = _expanded == 'faq' ? null : 'faq'),
+              onTap: () =>
+                  setState(() => _expanded = _expanded == 'faq' ? null : 'faq'),
             ),
             if (_expanded == 'faq')
               Container(
@@ -1956,14 +1973,16 @@ class _SupportSurfaceState extends ConsumerState<_SupportSurface> {
                   color: Colors.white.withValues(alpha: 0.95),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Column(
-                  children: [
-                    for (final item in _faqItems) ...[
-                      _FaqItem(question: item.$1, answer: item.$2),
-                      if (item != _faqItems.last)
-                        const Divider(height: 20),
+                child: Theme(
+                  data: _lightPanelTheme(context),
+                  child: Column(
+                    children: [
+                      for (final item in _faqItems) ...[
+                        _FaqItem(question: item.$1, answer: item.$2),
+                        if (item != _faqItems.last) const Divider(height: 20),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
           ],
@@ -2021,6 +2040,7 @@ class _SupportLinkRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final panelTheme = _lightPanelTheme(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -2030,32 +2050,32 @@ class _SupportLinkRow extends StatelessWidget {
           color: Colors.white.withValues(alpha: 0.95),
           borderRadius: BorderRadius.circular(14),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
+        child: Theme(
+          data: _lightPanelTheme(context),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: color, size: 18),
               ),
-              child: Icon(icon, color: color, size: 18),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                label,
-                style: Theme.of(context).textTheme.bodyLarge,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(label, style: panelTheme.textTheme.bodyLarge),
               ),
-            ),
-            Icon(
-              expanded
-                  ? Icons.keyboard_arrow_up_rounded
-                  : Icons.keyboard_arrow_right_rounded,
-              color: AppColors.mutedInk,
-              size: 18,
-            ),
-          ],
+              Icon(
+                expanded
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_right_rounded,
+                color: _lightPanelMutedInk,
+                size: 18,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2063,10 +2083,7 @@ class _SupportLinkRow extends StatelessWidget {
 }
 
 class _SupportComposerInline extends StatefulWidget {
-  const _SupportComposerInline({
-    required this.hint,
-    required this.onSubmit,
-  });
+  const _SupportComposerInline({required this.hint, required this.onSubmit});
 
   final String hint;
   final Future<void> Function(String message) onSubmit;
@@ -2087,6 +2104,7 @@ class _SupportComposerInlineState extends State<_SupportComposerInline> {
 
   @override
   Widget build(BuildContext context) {
+    final panelTheme = _lightPanelTheme(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.all(14),
@@ -2094,39 +2112,44 @@ class _SupportComposerInlineState extends State<_SupportComposerInline> {
         color: Colors.white.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(14),
       ),
-      child: Column(
-        children: [
-          TextField(
-            controller: _controller,
-            minLines: 3,
-            maxLines: 5,
-            style: Theme.of(context).textTheme.bodyMedium,
-            decoration: InputDecoration(
-              hintText: widget.hint,
-              border: InputBorder.none,
-              isDense: true,
+      child: Theme(
+        data: panelTheme,
+        child: Column(
+          children: [
+            TextField(
+              controller: _controller,
+              minLines: 3,
+              maxLines: 5,
+              style: panelTheme.textTheme.bodyMedium?.copyWith(
+                color: _lightPanelInk,
+              ),
+              decoration: InputDecoration(
+                hintText: widget.hint,
+                border: InputBorder.none,
+                isDense: true,
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: _saving
-                  ? null
-                  : () async {
-                      final msg = _controller.text.trim();
-                      if (msg.isEmpty) return;
-                      setState(() => _saving = true);
-                      await widget.onSubmit(msg);
-                      if (mounted) {
-                        _controller.clear();
-                        setState(() => _saving = false);
-                      }
-                    },
-              child: Text(_saving ? 'Saving…' : 'Send'),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _saving
+                    ? null
+                    : () async {
+                        final msg = _controller.text.trim();
+                        if (msg.isEmpty) return;
+                        setState(() => _saving = true);
+                        await widget.onSubmit(msg);
+                        if (mounted) {
+                          _controller.clear();
+                          setState(() => _saving = false);
+                        }
+                      },
+                child: Text(_saving ? 'Saving…' : 'Send'),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -2156,9 +2179,9 @@ class _FaqItemState extends State<_FaqItem> {
               Expanded(
                 child: Text(
                   widget.question,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
                 ),
               ),
               Icon(
@@ -2170,10 +2193,7 @@ class _FaqItemState extends State<_FaqItem> {
           ),
           if (_open) ...[
             const SizedBox(height: 6),
-            Text(
-              widget.answer,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+            Text(widget.answer, style: Theme.of(context).textTheme.bodyMedium),
           ],
         ],
       ),
@@ -2368,6 +2388,7 @@ class _RsvpEventRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final panelTheme = _lightPanelTheme(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.all(14),
@@ -2381,14 +2402,11 @@ class _RsvpEventRow extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  event.title,
-                  style: Theme.of(context).textTheme.bodyLarge,
-                ),
+                child: Text(event.title, style: panelTheme.textTheme.bodyLarge),
               ),
               Text(
                 status.label,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                style: panelTheme.textTheme.bodyMedium?.copyWith(
                   color: _statusColor(status),
                   fontWeight: FontWeight.w800,
                 ),
@@ -2400,7 +2418,7 @@ class _RsvpEventRow extends StatelessWidget {
             event.attendees.length == 1
                 ? event.attendees.first
                 : event.attendees.join(', '),
-            style: Theme.of(context).textTheme.bodyMedium,
+            style: panelTheme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -2540,7 +2558,10 @@ class _WhatsNewCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(999),
@@ -2666,10 +2687,7 @@ class _AppIconSurface extends ConsumerWidget {
         _SettingsGroup(
           title: 'Theme Match',
           children: [
-            _InfoRow(
-              title: 'Current accent',
-              value: prefs.accentPalette.label,
-            ),
+            _InfoRow(title: 'Current accent', value: prefs.accentPalette.label),
             _SwitchRow(
               title: 'Match theme',
               value: prefs.appIconMatchTheme,
@@ -2691,10 +2709,7 @@ class _AppIconSurface extends ConsumerWidget {
                   badge,
                 ),
               ),
-            _InfoRow(
-              title: 'Badge',
-              value: prefs.appIconBadge,
-            ),
+            _InfoRow(title: 'Badge', value: prefs.appIconBadge),
           ],
         ),
         Padding(
@@ -2705,6 +2720,41 @@ class _AppIconSurface extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─── Coming Soon Banner ───────────────────────────────────────────────────────
+
+class _ComingSoonBanner extends StatelessWidget {
+  const _ComingSoonBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.gold.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.gold.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.construction_rounded, color: AppColors.gold, size: 18),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Colors.white70,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2733,6 +2783,29 @@ class _SegmentHeader extends StatelessWidget {
       ],
     );
   }
+}
+
+const _lightPanelInk = Color(0xFF1A1814);
+const _lightPanelMutedInk = Color(0xFF6F6B63);
+
+ThemeData _lightPanelTheme(BuildContext context) {
+  final theme = Theme.of(context);
+  final textTheme = theme.textTheme;
+
+  return theme.copyWith(
+    textTheme: textTheme.copyWith(
+      headlineMedium: textTheme.headlineMedium?.copyWith(color: _lightPanelInk),
+      titleMedium: textTheme.titleMedium?.copyWith(color: _lightPanelInk),
+      bodyLarge: textTheme.bodyLarge?.copyWith(color: _lightPanelInk),
+      bodyMedium: textTheme.bodyMedium?.copyWith(color: _lightPanelMutedInk),
+      labelLarge: textTheme.labelLarge?.copyWith(color: _lightPanelInk),
+      labelSmall: textTheme.labelSmall?.copyWith(color: _lightPanelMutedInk),
+    ),
+    iconTheme: theme.iconTheme.copyWith(color: _lightPanelInk),
+    inputDecorationTheme: theme.inputDecorationTheme.copyWith(
+      hintStyle: textTheme.bodyMedium?.copyWith(color: _lightPanelMutedInk),
+    ),
+  );
 }
 
 class _SegmentChip extends StatelessWidget {
@@ -2845,7 +2918,7 @@ class _ChoiceRow extends StatelessWidget {
           selected
               ? Icons.check_circle_rounded
               : Icons.radio_button_unchecked_rounded,
-          color: selected ? accent : Colors.white38,
+          color: selected ? accent : _lightPanelMutedInk,
           size: 20,
         ),
       ),
@@ -2881,7 +2954,7 @@ class _CalendarRow extends StatelessWidget {
         ),
         trailing: Icon(
           selected ? Icons.check_rounded : Icons.add_rounded,
-          color: selected ? accent : Colors.white38,
+          color: selected ? accent : _lightPanelMutedInk,
           size: 20,
         ),
       ),
@@ -2897,12 +2970,13 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final panelTheme = _lightPanelTheme(context);
     return _SettingTile(
       title: title,
       trailing: Text(
         value,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: Colors.white54,
+        style: panelTheme.textTheme.bodyMedium?.copyWith(
+          color: _lightPanelMutedInk,
         ),
       ),
     );
@@ -2981,6 +3055,7 @@ class _SettingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final panelTheme = _lightPanelTheme(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
@@ -2995,12 +3070,9 @@ class _SettingTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: Theme.of(context).textTheme.bodyLarge),
+                Text(title, style: panelTheme.textTheme.bodyLarge),
                 if (subtitle != null)
-                  Text(
-                    subtitle!,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
+                  Text(subtitle!, style: panelTheme.textTheme.bodyMedium),
               ],
             ),
           ),
@@ -3178,19 +3250,20 @@ class _TinyToolbar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final accent = (ref.watch(appPreferencesControllerProvider).asData?.value ??
-            AppPreferences.defaults())
-        .accentPalette
-        .color;
+    final accent =
+        (ref.watch(appPreferencesControllerProvider).asData?.value ??
+                AppPreferences.defaults())
+            .accentPalette
+            .color;
     return Row(
       children: [
         Icon(Icons.arrow_back_rounded, color: accent, size: 18),
         const Spacer(),
         Text(
           title,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: Colors.white,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.labelLarge?.copyWith(color: Colors.white),
         ),
         const Spacer(),
         Icon(
@@ -3219,6 +3292,7 @@ class _HeroPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = iconColor ?? AppColors.teal;
+    final panelTheme = _lightPanelTheme(context);
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 20),
@@ -3240,9 +3314,9 @@ class _HeroPanel extends StatelessWidget {
             child: Icon(icon, color: color, size: 26),
           ),
           const SizedBox(height: 16),
-          Text(title, style: Theme.of(context).textTheme.headlineMedium),
+          Text(title, style: panelTheme.textTheme.headlineMedium),
           const SizedBox(height: 6),
-          Text(body, style: Theme.of(context).textTheme.bodyMedium),
+          Text(body, style: panelTheme.textTheme.bodyMedium),
         ],
       ),
     );
@@ -3268,7 +3342,7 @@ class _PriceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
+    final textTheme = _lightPanelTheme(context).textTheme;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(22),
@@ -3349,14 +3423,12 @@ class _RedeemCodeCardState extends State<_RedeemCodeCard> {
 
   @override
   Widget build(BuildContext context) {
+    final panelTheme = _lightPanelTheme(context);
     return _LightCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Redeem Code',
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
+          Text('Redeem Code', style: panelTheme.textTheme.headlineMedium),
           const SizedBox(height: 10),
           TextField(
             controller: _controller,
@@ -3444,7 +3516,7 @@ class _LightCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(26),
       ),
-      child: child,
+      child: Theme(data: _lightPanelTheme(context), child: child),
     );
   }
 }
@@ -3504,15 +3576,13 @@ class _WelcomeSurfaceState extends State<_WelcomeSurface> {
       icon: Icons.view_day_rounded,
       iconColor: AppColors.teal,
       title: 'Day Timeline',
-      body:
-          'The timeline shows your schedule for the week ahead and beyond.',
+      body: 'The timeline shows your schedule for the week ahead and beyond.',
     ),
     _WelcomeSlide(
       icon: Icons.calendar_view_month_rounded,
       iconColor: AppColors.coral,
       title: 'Month Heatmap',
-      body:
-          'The month view heatmap highlights the days when you\'re busiest.',
+      body: 'The month view heatmap highlights the days when you\'re busiest.',
     ),
     _WelcomeSlide(
       icon: Icons.palette_rounded,
@@ -3525,8 +3595,7 @@ class _WelcomeSurfaceState extends State<_WelcomeSurface> {
       icon: Icons.notifications_active_rounded,
       iconColor: AppColors.lilac,
       title: 'Smart Alerts',
-      body:
-          'Get rain alerts, daily briefings, and upcoming event reminders.',
+      body: 'Get rain alerts, daily briefings, and upcoming event reminders.',
     ),
   ];
 
@@ -3646,9 +3715,7 @@ class _WelcomeSurfaceState extends State<_WelcomeSurface> {
                 const Spacer(),
                 TextButton(
                   onPressed: _next,
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.white70,
-                  ),
+                  style: TextButton.styleFrom(foregroundColor: Colors.white70),
                   child: const Text('Next'),
                 ),
               ],
@@ -3694,9 +3761,7 @@ class _WelcomeFeaturePage extends StatelessWidget {
             decoration: BoxDecoration(
               color: slide.iconColor.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(32),
-              border: Border.all(
-                color: slide.iconColor.withValues(alpha: 0.2),
-              ),
+              border: Border.all(color: slide.iconColor.withValues(alpha: 0.2)),
             ),
             child: Icon(
               slide.icon,

@@ -58,8 +58,7 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
         .toList();
     final colorCard = preferences.matchTimelineColors;
     final isHourlyView =
-        _hourlyViewOverride ??
-        preferences.timelineLayoutMode == 'Day Hourly';
+        _hourlyViewOverride ?? preferences.timelineLayoutMode == 'Day Hourly';
     final preferenceController = ref.read(
       appPreferencesControllerProvider.notifier,
     );
@@ -96,8 +95,9 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                           return IconButton(
                             onPressed: () => Scaffold.of(context).openDrawer(),
                             style: IconButton.styleFrom(
-                              backgroundColor: tones.surfaceRaised
-                                  .withValues(alpha: 0.92),
+                              backgroundColor: tones.surfaceRaised.withValues(
+                                alpha: 0.92,
+                              ),
                               foregroundColor: tones.ink,
                               fixedSize: const Size(42, 42),
                             ),
@@ -116,8 +116,9 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                       IconButton(
                         onPressed: controller.jumpToToday,
                         style: IconButton.styleFrom(
-                          backgroundColor: tones.surfaceRaised
-                              .withValues(alpha: 0.92),
+                          backgroundColor: tones.surfaceRaised.withValues(
+                            alpha: 0.92,
+                          ),
                           foregroundColor: tones.ink,
                           fixedSize: const Size(42, 42),
                         ),
@@ -186,11 +187,11 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                                         });
                                         preferenceController
                                             .setStringPreference(
-                                          PreferenceKeys.timelineLayoutMode,
-                                          nextHourly
-                                              ? 'Day Hourly'
-                                              : 'Traditional',
-                                        );
+                                              PreferenceKeys.timelineLayoutMode,
+                                              nextHourly
+                                                  ? 'Day Hourly'
+                                                  : 'Traditional',
+                                            );
                                       },
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(
@@ -219,16 +220,14 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                                             ),
                                             const SizedBox(width: 5),
                                             Text(
-                                              isHourlyView
-                                                  ? 'Hourly'
-                                                  : 'List',
+                                              isHourlyView ? 'Hourly' : 'List',
                                               style: textTheme.labelSmall
                                                   ?.copyWith(
-                                                color: isHourlyView
-                                                    ? tones.surface
-                                                    : tones.mutedInk,
-                                                fontSize: 10,
-                                              ),
+                                                    color: isHourlyView
+                                                        ? tones.surface
+                                                        : tones.mutedInk,
+                                                    fontSize: 10,
+                                                  ),
                                             ),
                                           ],
                                         ),
@@ -241,51 +240,50 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                                   child: dayEvents.isEmpty
                                       ? const _EmptyDayState()
                                       : isHourlyView
-                                          ? _HourlyTimeline(
-                                              events: dayEvents,
-                                              state: state,
+                                      ? _HourlyTimeline(
+                                          events: dayEvents,
+                                          state: state,
+                                          colorCard: colorCard,
+                                          selectedDate: state.selectedDate,
+                                          onEventTap: (event) {
+                                            final cal = state.calendarById(
+                                              event.calendarId,
+                                            );
+                                            _openEventDetailSheet(
+                                              context,
+                                              ref,
+                                              event,
+                                              cal,
+                                              state,
+                                            );
+                                          },
+                                        )
+                                      : ListView.separated(
+                                          physics:
+                                              const BouncingScrollPhysics(),
+                                          itemCount: dayEvents.length,
+                                          separatorBuilder: (_, _) =>
+                                              const SizedBox(height: 14),
+                                          itemBuilder: (context, index) {
+                                            final event = dayEvents[index];
+                                            final calendar = state.calendarById(
+                                              event.calendarId,
+                                            );
+                                            return _EventCard(
+                                              event: event,
+                                              calendar: calendar,
                                               colorCard: colorCard,
-                                              selectedDate: state.selectedDate,
-                                              onEventTap: (event) {
-                                                final cal = state.calendarById(
-                                                  event.calendarId,
-                                                );
-                                                _openEventDetailSheet(
-                                                  context,
-                                                  ref,
-                                                  event,
-                                                  cal,
-                                                  state,
-                                                );
-                                              },
-                                            )
-                                          : ListView.separated(
-                                              physics:
-                                                  const BouncingScrollPhysics(),
-                                              itemCount: dayEvents.length,
-                                              separatorBuilder: (_, _) =>
-                                                  const SizedBox(height: 14),
-                                              itemBuilder: (context, index) {
-                                                final event = dayEvents[index];
-                                                final calendar =
-                                                    state.calendarById(
-                                                  event.calendarId,
-                                                );
-                                                return _EventCard(
-                                                  event: event,
-                                                  calendar: calendar,
-                                                  colorCard: colorCard,
-                                                  onTap: () =>
-                                                      _openEventDetailSheet(
-                                                        context,
-                                                        ref,
-                                                        event,
-                                                        calendar,
-                                                        state,
-                                                      ),
-                                                );
-                                              },
-                                            ),
+                                              onTap: () =>
+                                                  _openEventDetailSheet(
+                                                    context,
+                                                    ref,
+                                                    event,
+                                                    calendar,
+                                                    state,
+                                                  ),
+                                            );
+                                          },
+                                        ),
                                 ),
                               ],
                             ),
@@ -301,9 +299,7 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                                 ),
                               ),
                               onNextDay: () => controller.selectDate(
-                                state.selectedDate.add(
-                                  const Duration(days: 1),
-                                ),
+                                state.selectedDate.add(const Duration(days: 1)),
                               ),
                               onMonthPressed: () => showMonthOverviewSheet(
                                 context: context,
@@ -369,10 +365,7 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
     final strength = preferences.heavyShading ? 0.11 : 0.055;
 
     if (preferences.shadeToday && isToday) {
-      return Color.alphaBlend(
-        accent.withValues(alpha: strength),
-        base,
-      );
+      return Color.alphaBlend(accent.withValues(alpha: strength), base);
     }
     if (preferences.shadePastDays && isPast) {
       return Color.alphaBlend(
@@ -574,9 +567,7 @@ class _RailDayChip extends StatelessWidget {
           Text(
             day.label,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: day.isToday
-                  ? accent
-                  : Colors.white.withValues(alpha: 0.6),
+              color: day.isToday ? accent : Colors.white.withValues(alpha: 0.6),
               fontSize: 9,
             ),
           ),
@@ -589,8 +580,8 @@ class _RailDayChip extends StatelessWidget {
               color: isSelected
                   ? Colors.white
                   : day.isToday
-                      ? accent.withValues(alpha: 0.22)
-                      : Colors.transparent,
+                  ? accent.withValues(alpha: 0.22)
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(10),
             ),
             alignment: Alignment.center,
@@ -600,8 +591,8 @@ class _RailDayChip extends StatelessWidget {
                 color: isSelected
                     ? AppColors.ink
                     : day.isToday
-                        ? accent
-                        : Colors.white,
+                    ? accent
+                    : Colors.white,
                 fontWeight: FontWeight.w700,
                 fontSize: 11,
               ),
@@ -717,29 +708,29 @@ class _OfflineBriefingCard extends StatelessWidget {
     final seed = (date.year + date.month * 7 + date.day * 13) % 4;
     return switch (seed) {
       0 => const _OfflineWeather(
-          icon: Icons.wb_sunny_rounded,
-          color: AppColors.gold,
-          temperature: 72,
-          summary: 'clear',
-        ),
+        icon: Icons.wb_sunny_rounded,
+        color: AppColors.gold,
+        temperature: 72,
+        summary: 'clear',
+      ),
       1 => const _OfflineWeather(
-          icon: Icons.cloud_rounded,
-          color: AppColors.lilac,
-          temperature: 66,
-          summary: 'cloudy',
-        ),
+        icon: Icons.cloud_rounded,
+        color: AppColors.lilac,
+        temperature: 66,
+        summary: 'cloudy',
+      ),
       2 => const _OfflineWeather(
-          icon: Icons.water_drop_rounded,
-          color: AppColors.teal,
-          temperature: 61,
-          summary: 'light rain',
-        ),
+        icon: Icons.water_drop_rounded,
+        color: AppColors.teal,
+        temperature: 61,
+        summary: 'light rain',
+      ),
       _ => const _OfflineWeather(
-          icon: Icons.air_rounded,
-          color: AppColors.sage,
-          temperature: 69,
-          summary: 'breezy',
-        ),
+        icon: Icons.air_rounded,
+        color: AppColors.sage,
+        temperature: 69,
+        summary: 'breezy',
+      ),
     };
   }
 
@@ -860,12 +851,8 @@ class _EventCard extends StatelessWidget {
                     if (event.location.isNotEmpty || !compact) ...[
                       const SizedBox(height: 2),
                       Text(
-                        event.location.isEmpty
-                            ? calendar.name
-                            : event.location,
-                        style: textTheme.bodyMedium?.copyWith(
-                          color: onBgMuted,
-                        ),
+                        event.location.isEmpty ? calendar.name : event.location,
+                        style: textTheme.bodyMedium?.copyWith(color: onBgMuted),
                       ),
                     ],
                     if (!compact) ...[
@@ -903,8 +890,9 @@ class _EventCard extends StatelessWidget {
                         const SizedBox(height: 8),
                         Text(
                           event.note,
-                          style: textTheme.bodyMedium
-                              ?.copyWith(color: onBgMuted),
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: onBgMuted,
+                          ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -975,20 +963,23 @@ class _HourlyTimeline extends StatelessWidget {
   }
 
   double _topFor(PlannerEvent e) {
-    final offsetMinutes =
-        (e.startAt.hour - _startHour) * 60 + e.startAt.minute;
+    final offsetMinutes = (e.startAt.hour - _startHour) * 60 + e.startAt.minute;
     return offsetMinutes / 60 * _hourHeight;
   }
 
   double _barHeightFor(PlannerEvent e) {
     final minutes = e.endAt.difference(e.startAt).inMinutes;
-    return (minutes / 60 * _hourHeight).clamp(_hourHeight * 0.375, 24 * _hourHeight);
+    return (minutes / 60 * _hourHeight).clamp(
+      _hourHeight * 0.375,
+      24 * _hourHeight,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final isToday = selectedDate.year == now.year &&
+    final isToday =
+        selectedDate.year == now.year &&
         selectedDate.month == now.month &&
         selectedDate.day == now.day;
     final hours = List.generate(_endHour - _startHour, (i) => _startHour + i);
@@ -1008,7 +999,7 @@ class _HourlyTimeline extends StatelessWidget {
                 Text(
                   'ALL DAY',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: AppColors.mutedInk,
+                    color: context.plannerTones.mutedInk,
                     letterSpacing: 1,
                   ),
                 ),
@@ -1035,10 +1026,7 @@ class _HourlyTimeline extends StatelessWidget {
             children: [
               // Hour grid: labels + vertical divider line
               Column(
-                children: [
-                  for (final hour in hours)
-                    _HourGridRow(hour: hour),
-                ],
+                children: [for (final hour in hours) _HourGridRow(hour: hour)],
               ),
               // Duration bars — one per timed event, spans start→end
               for (final e in timedEvents)
@@ -1074,11 +1062,10 @@ class _HourlyTimeline extends StatelessWidget {
                   ),
                 ),
               // Current time indicator
-              if (isToday &&
-                  now.hour >= _startHour &&
-                  now.hour < _endHour)
+              if (isToday && now.hour >= _startHour && now.hour < _endHour)
                 Positioned(
-                  top: (now.hour - _startHour) * _hourHeight +
+                  top:
+                      (now.hour - _startHour) * _hourHeight +
                       (now.minute / 60) * _hourHeight,
                   left: _barLeft - 10,
                   right: 0,
@@ -1093,10 +1080,7 @@ class _HourlyTimeline extends StatelessWidget {
                         ),
                       ),
                       Expanded(
-                        child: Container(
-                          height: 1.5,
-                          color: AppColors.coral,
-                        ),
+                        child: Container(height: 1.5, color: AppColors.coral),
                       ),
                     ],
                   ),
@@ -1142,10 +1126,7 @@ class _HourGridRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          Container(
-            width: 1,
-            color: tones.line,
-          ),
+          Container(width: 1, color: tones.line),
         ],
       ),
     );
@@ -1188,26 +1169,17 @@ class _BottomPlannerBar extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _BarButton(
-                icon: Icons.chevron_left_rounded,
-                onTap: onPrevDay,
-              ),
+              _BarButton(icon: Icons.chevron_left_rounded, onTap: onPrevDay),
               _BarButton(
                 icon: Icons.access_time_rounded,
                 onTap: onTodayPressed,
               ),
-              _BarButton(
-                icon: Icons.tune_rounded,
-                onTap: onFilterPressed,
-              ),
+              _BarButton(icon: Icons.tune_rounded, onTap: onFilterPressed),
               _BarButton(
                 icon: Icons.calendar_view_month_rounded,
                 onTap: onMonthPressed,
               ),
-              _BarButton(
-                icon: Icons.chevron_right_rounded,
-                onTap: onNextDay,
-              ),
+              _BarButton(icon: Icons.chevron_right_rounded, onTap: onNextDay),
             ],
           ),
         ),
@@ -1249,9 +1221,7 @@ class _MetaPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tones = context.plannerTones;
-    final bg = colorCard
-        ? Colors.white.withValues(alpha: 0.2)
-        : tones.line;
+    final bg = colorCard ? Colors.white.withValues(alpha: 0.2) : tones.line;
     final fg = colorCard ? Colors.white : tones.mutedInk;
     final textColor = colorCard ? Colors.white : tones.ink;
 
@@ -1335,9 +1305,7 @@ class _PlannerMenu extends ConsumerWidget {
                 account.hasPremiumPreview
                     ? 'Trial days remaining'
                     : 'Preview days remaining',
-                style: textTheme.bodyMedium?.copyWith(
-                  color: Colors.white60,
-                ),
+                style: textTheme.bodyMedium?.copyWith(color: Colors.white60),
               ),
               const SizedBox(height: 24),
               Text(
@@ -1502,20 +1470,31 @@ class _HomeLoading extends StatelessWidget {
   }
 }
 
-class _HomeError extends StatelessWidget {
+class _HomeError extends ConsumerWidget {
   const _HomeError({required this.error});
 
   final String error;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Text(
-          error,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodyLarge,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              error,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: () => ref.invalidate(plannerControllerProvider),
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Retry'),
+            ),
+          ],
         ),
       ),
     );
