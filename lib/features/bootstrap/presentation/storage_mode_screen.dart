@@ -34,7 +34,7 @@ class StorageModeScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 28),
               Text(
-                'VERTICAL\nPLANNER',
+                'DAYVEN',
                 style: textTheme.displayLarge?.copyWith(
                   color: Colors.white, fontSize: 38, height: 1.05,
                 ),

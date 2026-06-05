@@ -38,13 +38,8 @@ class SqlitePlannerRepository implements PlannerRepository {
     final eventsRows = await db.query('events', orderBy: 'start_at asc');
     final calendars = calendarsRows.map(_calendarFromRow).toList();
     final events = eventsRows.map(_eventFromRow).toList();
-    final selectedDate = events.isNotEmpty
-        ? DateTime(
-            events.first.startAt.year,
-            events.first.startAt.month,
-            events.first.startAt.day,
-          )
-        : DateTime.now();
+    final now = DateTime.now();
+    final selectedDate = DateTime(now.year, now.month, now.day);
 
     return PlannerState(
       selectedDate: selectedDate,
@@ -70,7 +65,8 @@ class SqlitePlannerRepository implements PlannerRepository {
       note: draft.note,
       calendarId: draft.calendarId,
       reminder: draft.reminder,
-      repeatRule: draft.repeatRule,
+      repeatRule: draft.effectiveRecurrence.frequency,
+      recurrence: draft.effectiveRecurrence,
       attendees: draft.attendees,
     );
 
@@ -165,6 +161,7 @@ class SqlitePlannerRepository implements PlannerRepository {
   }
 
   PlannerEvent _eventFromRow(Map<String, Object?> row) {
+    final recurrence = PlannerRecurrence.parse(row['repeat_rule'] as String?);
     return PlannerEvent(
       id: row['id'] as String,
       title: row['title'] as String? ?? '',
@@ -176,7 +173,8 @@ class SqlitePlannerRepository implements PlannerRepository {
       note: row['note'] as String? ?? '',
       calendarId: row['calendar_id'] as String? ?? 'calendar',
       reminder: plannerReminderFromStorage(row['reminder'] as String?),
-      repeatRule: plannerRepeatRuleFromStorage(row['repeat_rule'] as String?),
+      repeatRule: recurrence.frequency,
+      recurrence: recurrence,
       attendees: _decodeAttendees(row['attendees']),
     );
   }
@@ -193,7 +191,7 @@ class SqlitePlannerRepository implements PlannerRepository {
       'note': event.note,
       'calendar_id': event.calendarId,
       'reminder': event.reminder.storageValue,
-      'repeat_rule': event.repeatRule.storageValue,
+      'repeat_rule': event.effectiveRecurrence.encode(),
       'attendees': jsonEncode(event.attendees),
     };
   }
@@ -223,17 +221,37 @@ class SqlitePlannerRepository implements PlannerRepository {
     return const [];
   }
 
-  Color _parseColor(String? hex) {
-    final fallback = AppColors.lilac;
-    if (hex == null || hex.isEmpty) {
-      return fallback;
-    }
+  @override
+  Future<void> renameCalendar(String id, String newName) async {
+    final db = await _db;
+    await db.update('calendars', {'name': newName},
+        where: 'id = ?', whereArgs: [id]);
+  }
 
-    final sanitized = hex.replaceFirst('#', '');
-    final normalized = sanitized.length == 6
-        ? 'FF$sanitized'
-        : sanitized.padLeft(8, 'F');
-    final value = int.tryParse(normalized, radix: 16);
-    return value == null ? fallback : Color(value);
+  @override
+  Future<PlannerCalendar> createCalendar(String name, Color color) async {
+    final db = await _db;
+    final id = DateTime.now().microsecondsSinceEpoch.toString();
+    final hex = _colorToHex(color);
+    final countResult = Sqflite.firstIntValue(
+      await db.rawQuery('select count(*) from calendars'),
+    );
+    final position = (countResult ?? 0) + 1;
+    await db.insert('calendars', {
+      'id': id,
+      'name': name,
+      'color': hex,
+      'position': position,
+    });
+    return PlannerCalendar(id: id, name: name, color: color);
+  }
+
+  Color _parseColor(String? hex) => parsePlannerColor(hex);
+
+  String _colorToHex(Color c) {
+    final r = (c.r * 255).round().clamp(0, 255).toRadixString(16).padLeft(2, '0');
+    final g = (c.g * 255).round().clamp(0, 255).toRadixString(16).padLeft(2, '0');
+    final b = (c.b * 255).round().clamp(0, 255).toRadixString(16).padLeft(2, '0');
+    return '#$r$g$b'.toUpperCase();
   }
 }

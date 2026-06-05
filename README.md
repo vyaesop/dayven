@@ -1,4 +1,4 @@
-# Vertical Planner
+# Dayven
 
 Android-first Flutter planner app inspired by the screenshot set in this repo.
 

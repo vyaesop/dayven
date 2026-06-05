@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -37,14 +39,23 @@ class FirebaseAuthService {
   }
 
   Future<UserCredential?> signInWithGoogle() async {
-    final googleUser = await _google.signIn();
-    if (googleUser == null) return null;
-    final googleAuth = await googleUser.authentication;
-    final credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth.accessToken,
-      idToken: googleAuth.idToken,
-    );
-    return _auth.signInWithCredential(credential);
+    try {
+      final googleUser = await _google.signIn();
+      if (googleUser == null) return null; // user cancelled
+      final googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      return await _auth.signInWithCredential(credential);
+    } on PlatformException catch (e) {
+      // google_sign_in surfaces native failures here. The most common is
+      // ApiException: 10 (DEVELOPER_ERROR) — the signing key's SHA-1 isn't
+      // registered in the Firebase console for this package name.
+      debugPrint('Google sign-in PlatformException: '
+          'code=${e.code} message=${e.message} details=${e.details}');
+      rethrow;
+    }
   }
 
   Future<void> sendPasswordResetEmail(String email) {

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../app/theme/app_theme.dart';
 import '../../../core/storage/storage_mode.dart';
+import '../../../core/weather/weather_service.dart';
 import '../../account/application/local_account_controller.dart';
 import '../../bootstrap/application/app_bootstrap_controller.dart';
 import '../../menu/presentation/planner_feature_screens.dart';
@@ -41,10 +43,62 @@ class _HomeLoaded extends ConsumerStatefulWidget {
   ConsumerState<_HomeLoaded> createState() => _HomeLoadedState();
 }
 
+/// The three ways the day's schedule can be rendered.
+enum _TimelineLayout { traditional, hourly, multiLine }
+
+_TimelineLayout _layoutFromPref(String value) => switch (value) {
+      'Day Hourly' => _TimelineLayout.hourly,
+      'Multi-line' => _TimelineLayout.multiLine,
+      _ => _TimelineLayout.traditional,
+    };
+
+String _layoutToPref(_TimelineLayout layout) => switch (layout) {
+      _TimelineLayout.hourly => 'Day Hourly',
+      _TimelineLayout.multiLine => 'Multi-line',
+      _TimelineLayout.traditional => 'Traditional',
+    };
+
+extension _TimelineLayoutX on _TimelineLayout {
+  _TimelineLayout get next => switch (this) {
+        _TimelineLayout.traditional => _TimelineLayout.hourly,
+        _TimelineLayout.hourly => _TimelineLayout.multiLine,
+        _TimelineLayout.multiLine => _TimelineLayout.traditional,
+      };
+
+  String get label => switch (this) {
+        _TimelineLayout.traditional => 'Cards',
+        _TimelineLayout.hourly => 'Hourly',
+        _TimelineLayout.multiLine => 'List',
+      };
+
+  IconData get icon => switch (this) {
+        _TimelineLayout.traditional => Icons.view_agenda_rounded,
+        _TimelineLayout.hourly => Icons.access_time_rounded,
+        _TimelineLayout.multiLine => Icons.format_list_bulleted_rounded,
+      };
+}
+
 class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
-  bool? _hourlyViewOverride;
+  _TimelineLayout? _layoutOverride;
 
   PlannerState get state => widget.state;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowWelcome());
+  }
+
+  /// On the very first launch (after storage selection) show the welcome tour
+  /// once, so the onboarding isn't stranded in the menu where users never see it.
+  Future<void> _maybeShowWelcome() async {
+    const key = 'has_seen_welcome_v1';
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(key) ?? false) return;
+    await prefs.setBool(key, true);
+    if (!mounted) return;
+    openPlannerMenuDestination(context, PlannerMenuDestination.welcome);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,8 +111,8 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
         .where((event) => preferences.showAllDay || !event.isAllDay)
         .toList();
     final colorCard = preferences.matchTimelineColors;
-    final isHourlyView =
-        _hourlyViewOverride ?? preferences.timelineLayoutMode == 'Day Hourly';
+    final layout = _layoutOverride ??
+        _layoutFromPref(preferences.timelineLayoutMode);
     final preferenceController = ref.read(
       appPreferencesControllerProvider.notifier,
     );
@@ -94,12 +148,13 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                         builder: (context) {
                           return IconButton(
                             onPressed: () => Scaffold.of(context).openDrawer(),
+                            tooltip: 'Open menu',
                             style: IconButton.styleFrom(
                               backgroundColor: tones.surfaceRaised.withValues(
                                 alpha: 0.92,
                               ),
                               foregroundColor: tones.ink,
-                              fixedSize: const Size(42, 42),
+                              fixedSize: const Size(44, 44),
                             ),
                             icon: const Icon(Icons.menu_rounded),
                           );
@@ -115,12 +170,13 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                       const Spacer(),
                       IconButton(
                         onPressed: controller.jumpToToday,
+                        tooltip: 'Jump to today',
                         style: IconButton.styleFrom(
                           backgroundColor: tones.surfaceRaised.withValues(
                             alpha: 0.92,
                           ),
                           foregroundColor: tones.ink,
-                          fixedSize: const Size(42, 42),
+                          fixedSize: const Size(44, 44),
                         ),
                         icon: const Icon(Icons.today_rounded),
                       ),
@@ -140,8 +196,10 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                           ),
                         ],
                       ),
-                      child: Stack(
-                        children: [
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(32),
+                        child: Stack(
+                          children: [
                           Padding(
                             padding: const EdgeInsets.fromLTRB(20, 24, 20, 96),
                             child: Column(
@@ -161,9 +219,17 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                                     color: tones.mutedInk,
                                   ),
                                 ),
-                                if (preferences.showWeather) ...[
+                                // Weather is only meaningful for today, so the
+                                // briefing is shown for the current day only
+                                // (rather than implying a forecast for any
+                                // arbitrary future/past date).
+                                if (preferences.showWeather &&
+                                    _isSameDay(
+                                      state.selectedDate,
+                                      DateTime.now(),
+                                    )) ...[
                                   const SizedBox(height: 14),
-                                  _OfflineBriefingCard(
+                                  _WeatherBriefingCard(
                                     date: state.selectedDate,
                                     events: dayEvents,
                                     preferences: preferences,
@@ -179,57 +245,59 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                                       ),
                                     ),
                                     const Spacer(),
-                                    GestureDetector(
-                                      onTap: () {
-                                        final nextHourly = !isHourlyView;
-                                        setState(() {
-                                          _hourlyViewOverride = nextHourly;
-                                        });
-                                        preferenceController
-                                            .setStringPreference(
-                                              PreferenceKeys.timelineLayoutMode,
-                                              nextHourly
-                                                  ? 'Day Hourly'
-                                                  : 'Traditional',
-                                            );
-                                      },
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 5,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: isHourlyView
-                                              ? tones.ink
-                                              : tones.line,
-                                          borderRadius: BorderRadius.circular(
-                                            999,
+                                    Tooltip(
+                                      message:
+                                          'Switch layout (currently ${layout.label})',
+                                      child: Semantics(
+                                        button: true,
+                                        label:
+                                            'Switch schedule layout, currently ${layout.label}',
+                                        child: GestureDetector(
+                                          onTap: () {
+                                            final nextLayout = layout.next;
+                                            setState(() {
+                                              _layoutOverride = nextLayout;
+                                            });
+                                            preferenceController
+                                                .setStringPreference(
+                                                  PreferenceKeys
+                                                      .timelineLayoutMode,
+                                                  _layoutToPref(nextLayout),
+                                                );
+                                          },
+                                          behavior: HitTestBehavior.opaque,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 8,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: tones.surfaceSoft,
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                              border:
+                                                  Border.all(color: tones.line),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  layout.icon,
+                                                  size: 13,
+                                                  color: tones.ink,
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  layout.label,
+                                                  style: textTheme.labelSmall
+                                                      ?.copyWith(
+                                                        color: tones.ink,
+                                                        fontSize: 11,
+                                                      ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              isHourlyView
-                                                  ? Icons.access_time_rounded
-                                                  : Icons.view_agenda_rounded,
-                                              size: 12,
-                                              color: isHourlyView
-                                                  ? tones.surface
-                                                  : tones.mutedInk,
-                                            ),
-                                            const SizedBox(width: 5),
-                                            Text(
-                                              isHourlyView ? 'Hourly' : 'List',
-                                              style: textTheme.labelSmall
-                                                  ?.copyWith(
-                                                    color: isHourlyView
-                                                        ? tones.surface
-                                                        : tones.mutedInk,
-                                                    fontSize: 10,
-                                                  ),
-                                            ),
-                                          ],
                                         ),
                                       ),
                                     ),
@@ -237,53 +305,97 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                                 ),
                                 const SizedBox(height: 12),
                                 Expanded(
-                                  child: dayEvents.isEmpty
-                                      ? const _EmptyDayState()
-                                      : isHourlyView
-                                      ? _HourlyTimeline(
-                                          events: dayEvents,
-                                          state: state,
-                                          colorCard: colorCard,
-                                          selectedDate: state.selectedDate,
-                                          onEventTap: (event) {
-                                            final cal = state.calendarById(
-                                              event.calendarId,
-                                            );
-                                            _openEventDetailSheet(
-                                              context,
-                                              ref,
-                                              event,
-                                              cal,
-                                              state,
-                                            );
+                                  child: ClipRect(
+                                    child: dayEvents.isEmpty
+                                        ? _EmptyDayState(
+                                            onAddEvent: () =>
+                                                _openCreateEventSheet(
+                                                  context,
+                                                  ref,
+                                                  state,
+                                                ),
+                                          )
+                                        : switch (layout) {
+                                            _TimelineLayout.hourly =>
+                                              _HourlyTimeline(
+                                                events: dayEvents,
+                                                state: state,
+                                                colorCard: colorCard,
+                                                selectedDate:
+                                                    state.selectedDate,
+                                                onEventTap: (event) =>
+                                                    _openEventDetailSheet(
+                                                      context,
+                                                      ref,
+                                                      event,
+                                                      state.calendarById(
+                                                        event.calendarId,
+                                                      ),
+                                                      state,
+                                                    ),
+                                              ),
+                                            _TimelineLayout.multiLine =>
+                                              ListView.separated(
+                                                physics:
+                                                    const BouncingScrollPhysics(),
+                                                itemCount: dayEvents.length,
+                                                separatorBuilder: (_, _) =>
+                                                    Divider(
+                                                      height: 1,
+                                                      color: tones.line,
+                                                    ),
+                                                itemBuilder: (context, index) {
+                                                  final event =
+                                                      dayEvents[index];
+                                                  final calendar =
+                                                      state.calendarById(
+                                                    event.calendarId,
+                                                  );
+                                                  return _MultiLineRow(
+                                                    event: event,
+                                                    calendar: calendar,
+                                                    onTap: () =>
+                                                        _openEventDetailSheet(
+                                                          context,
+                                                          ref,
+                                                          event,
+                                                          calendar,
+                                                          state,
+                                                        ),
+                                                  );
+                                                },
+                                              ),
+                                            _TimelineLayout.traditional =>
+                                              ListView.separated(
+                                                physics:
+                                                    const BouncingScrollPhysics(),
+                                                itemCount: dayEvents.length,
+                                                separatorBuilder: (_, _) =>
+                                                    const SizedBox(height: 14),
+                                                itemBuilder: (context, index) {
+                                                  final event =
+                                                      dayEvents[index];
+                                                  final calendar =
+                                                      state.calendarById(
+                                                    event.calendarId,
+                                                  );
+                                                  return _EventCard(
+                                                    event: event,
+                                                    calendar: calendar,
+                                                    colorCard: colorCard,
+                                                    onTap: () =>
+                                                        _openEventDetailSheet(
+                                                          context,
+                                                          ref,
+                                                          event,
+                                                          calendar,
+                                                          state,
+                                                        ),
+                                                  );
+                                                },
+                                              ),
                                           },
-                                        )
-                                      : ListView.separated(
-                                          physics:
-                                              const BouncingScrollPhysics(),
-                                          itemCount: dayEvents.length,
-                                          separatorBuilder: (_, _) =>
-                                              const SizedBox(height: 14),
-                                          itemBuilder: (context, index) {
-                                            final event = dayEvents[index];
-                                            final calendar = state.calendarById(
-                                              event.calendarId,
-                                            );
-                                            return _EventCard(
-                                              event: event,
-                                              calendar: calendar,
-                                              colorCard: colorCard,
-                                              onTap: () =>
-                                                  _openEventDetailSheet(
-                                                    context,
-                                                    ref,
-                                                    event,
-                                                    calendar,
-                                                    state,
-                                                  ),
-                                            );
-                                          },
-                                        ),
+                                  ),
                                 ),
                               ],
                             ),
@@ -309,11 +421,15 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                               onTodayPressed: controller.jumpToToday,
                               onFilterPressed: () => showCalendarFilterSheet(
                                 context: context,
-                                state: state,
                                 onToggleCalendar:
                                     controller.toggleCalendarVisibility,
                                 onShowAll: controller.setAllCalendarsVisible,
+                                onCreateCalendar: controller.createCalendar,
+                                onLoadHolidays:
+                                    controller.loadHolidaysForCountry,
                               ),
+                              onAddEvent: () =>
+                                  _openCreateEventSheet(context, ref, state),
                             ),
                           ),
                           if (preferences.showActions)
@@ -333,6 +449,7 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                       ),
                     ),
                   ),
+                ),
                 ],
               ),
             ),
@@ -399,12 +516,13 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
         .asData
         ?.value
         .defaultCalendarId;
+    final controller = ref.read(plannerControllerProvider.notifier);
     return showEventEditorSheet(
       context: context,
       selectedDate: state.selectedDate,
       calendars: state.calendars,
       defaultCalendarId: defaultCalendarId,
-      onCreate: ref.read(plannerControllerProvider.notifier).createEvent,
+      onCreate: controller.createEvent,
     );
   }
 
@@ -425,8 +543,12 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
           ?.value
           .defaultCalendarId,
       initialEvent: event,
+      onCreate: controller.createEvent,
       onUpdate: controller.updateEvent,
       onDelete: controller.deleteEvent,
+      onEditSeriesAll: (template) =>
+          controller.editSeriesAll(template.id, template),
+      onExcludeOccurrence: controller.excludeOccurrence,
     );
   }
 
@@ -560,8 +682,13 @@ class _RailDayChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: '${day.label} ${day.dayNumber}${day.isToday ? ', today' : ''}',
+      child: GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: Column(
         children: [
           Text(
@@ -574,8 +701,8 @@ class _RailDayChip extends StatelessWidget {
           const SizedBox(height: 4),
           AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            width: 28,
-            height: 28,
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
               color: isSelected
                   ? Colors.white
@@ -600,12 +727,13 @@ class _RailDayChip extends StatelessWidget {
           ),
         ],
       ),
+      ),
     );
   }
 }
 
-class _OfflineBriefingCard extends StatelessWidget {
-  const _OfflineBriefingCard({
+class _WeatherBriefingCard extends StatefulWidget {
+  const _WeatherBriefingCard({
     required this.date,
     required this.events,
     required this.preferences,
@@ -616,17 +744,37 @@ class _OfflineBriefingCard extends StatelessWidget {
   final AppPreferences preferences;
 
   @override
+  State<_WeatherBriefingCard> createState() => _WeatherBriefingCardState();
+}
+
+class _WeatherBriefingCardState extends State<_WeatherBriefingCard> {
+  WeatherData? _weather;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWeather();
+  }
+
+  Future<void> _loadWeather() async {
+    final data = await WeatherService.instance.getWeather();
+    if (mounted) setState(() { _weather = data; _loading = false; });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final tones = context.plannerTones;
-    final weather = _offlineWeatherFor(date);
-    final firstLocation = events
-        .map((event) => event.location.trim())
-        .firstWhere((location) => location.isNotEmpty, orElse: () => '');
-    final nextTimedEvent = events
-        .where((event) => !event.isAllDay)
+    final firstLocation = widget.events
+        .map((e) => e.location.trim())
+        .firstWhere((l) => l.isNotEmpty, orElse: () => '');
+    final nextTimedEvent = widget.events
+        .where((e) => !e.isAllDay)
         .cast<PlannerEvent?>()
-        .firstWhere((event) => event != null, orElse: () => null);
+        .firstWhere((_) => true, orElse: () => null);
+
+    final weather = _weather;
 
     return Container(
       width: double.infinity,
@@ -638,29 +786,53 @@ class _OfflineBriefingCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: weather.color.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(14),
+          if (_loading)
+            SizedBox(
+              width: 42,
+              height: 42,
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: tones.mutedInk,
+                  ),
+                ),
+              ),
+            )
+          else
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: (weather?.color ?? tones.mutedInk).withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(
+                weather?.icon ?? Icons.cloud_off_rounded,
+                color: weather?.color ?? tones.mutedInk,
+                size: 22,
+              ),
             ),
-            child: Icon(weather.icon, color: weather.color, size: 22),
-          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${weather.temperature}°, ${weather.summary}',
-                  style: textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+                  weather != null
+                      ? '${weather.temperatureC.round()}°C, ${weather.description}'
+                      : _loading ? 'Fetching weather…' : 'Weather unavailable',
+                  style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  _briefingLine(firstLocation, nextTimedEvent),
+                  _briefingLine(
+                    weather?.city ?? firstLocation,
+                    nextTimedEvent,
+                    hasWeather: weather != null,
+                  ),
                   style: textTheme.bodyMedium,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -668,18 +840,18 @@ class _OfflineBriefingCard extends StatelessWidget {
               ],
             ),
           ),
-          if (preferences.travelAlerts && firstLocation.isNotEmpty) ...[
+          if (widget.preferences.travelAlerts && firstLocation.isNotEmpty) ...[
             const SizedBox(width: 8),
             Column(
               children: [
                 Icon(
-                  _travelIcon(preferences.travelMode),
+                  _travelIcon(widget.preferences.travelMode),
                   color: tones.mutedInk,
                   size: 18,
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  preferences.travelMode,
+                  widget.preferences.travelMode,
                   style: textTheme.labelLarge?.copyWith(
                     color: tones.mutedInk,
                     fontSize: 9,
@@ -693,45 +865,11 @@ class _OfflineBriefingCard extends StatelessWidget {
     );
   }
 
-  String _briefingLine(String firstLocation, PlannerEvent? nextTimedEvent) {
-    final locationPart = firstLocation.isEmpty
-        ? 'No saved location yet'
-        : 'Near $firstLocation';
-    if (nextTimedEvent == null) {
-      return '$locationPart. Offline daily briefing.';
-    }
-
-    return '$locationPart. Next: ${nextTimedEvent.title}.';
-  }
-
-  _OfflineWeather _offlineWeatherFor(DateTime date) {
-    final seed = (date.year + date.month * 7 + date.day * 13) % 4;
-    return switch (seed) {
-      0 => const _OfflineWeather(
-        icon: Icons.wb_sunny_rounded,
-        color: AppColors.gold,
-        temperature: 72,
-        summary: 'clear',
-      ),
-      1 => const _OfflineWeather(
-        icon: Icons.cloud_rounded,
-        color: AppColors.lilac,
-        temperature: 66,
-        summary: 'cloudy',
-      ),
-      2 => const _OfflineWeather(
-        icon: Icons.water_drop_rounded,
-        color: AppColors.teal,
-        temperature: 61,
-        summary: 'light rain',
-      ),
-      _ => const _OfflineWeather(
-        icon: Icons.air_rounded,
-        color: AppColors.sage,
-        temperature: 69,
-        summary: 'breezy',
-      ),
-    };
+  String _briefingLine(String city, PlannerEvent? next, {required bool hasWeather}) {
+    final loc = city.isEmpty ? 'your area' : city;
+    final locationPart = hasWeather ? loc : 'offline';
+    if (next == null) return 'Weather in $locationPart. No events today.';
+    return '$locationPart. Next: ${next.title}.';
   }
 
   IconData _travelIcon(String mode) {
@@ -744,19 +882,8 @@ class _OfflineBriefingCard extends StatelessWidget {
   }
 }
 
-class _OfflineWeather {
-  const _OfflineWeather({
-    required this.icon,
-    required this.color,
-    required this.temperature,
-    required this.summary,
-  });
-
-  final IconData icon;
-  final Color color;
-  final int temperature;
-  final String summary;
-}
+bool _isSameDay(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month && a.day == b.day;
 
 /// Pick a foreground (text/icon) color that reads cleanly on top of [bg].
 /// Used by event cards when the card itself is painted in the calendar's color.
@@ -921,6 +1048,83 @@ class _EventCard extends StatelessWidget {
   }
 }
 
+/// Compact single-row representation used by the "List" (multi-line) layout:
+/// a calendar colour bar, the time, and the title with an optional location.
+class _MultiLineRow extends StatelessWidget {
+  const _MultiLineRow({
+    required this.event,
+    required this.calendar,
+    required this.onTap,
+  });
+
+  final PlannerEvent event;
+  final PlannerCalendar calendar;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final tones = context.plannerTones;
+    final subtitle = event.location.isNotEmpty ? event.location : calendar.name;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 4,
+              height: 38,
+              margin: const EdgeInsets.only(top: 2, right: 12),
+              decoration: BoxDecoration(
+                color: calendar.color,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            SizedBox(
+              width: 64,
+              child: Text(
+                event.isAllDay
+                    ? 'All day'
+                    : MaterialLocalizations.of(context).formatTimeOfDay(
+                        TimeOfDay.fromDateTime(event.startAt),
+                      ),
+                style: textTheme.bodyMedium?.copyWith(
+                  color: tones.ink,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    event.title,
+                    style: textTheme.titleMedium?.copyWith(fontSize: 15),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    subtitle,
+                    style: textTheme.bodyMedium?.copyWith(color: tones.mutedInk),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Hourly Timeline ──────────────────────────────────────────────────────────
 
 class _HourlyTimeline extends StatelessWidget {
@@ -975,6 +1179,58 @@ class _HourlyTimeline extends StatelessWidget {
     );
   }
 
+  /// Assigns overlapping events to side-by-side columns so concurrent events
+  /// don't render on top of each other. Returns each event with its column
+  /// index and the number of columns in its overlap cluster.
+  List<({PlannerEvent event, int col, int cols})> _layoutColumns(
+    List<PlannerEvent> events,
+  ) {
+    final sorted = [...events]..sort((a, b) {
+        final byStart = a.startAt.compareTo(b.startAt);
+        return byStart != 0 ? byStart : a.endAt.compareTo(b.endAt);
+      });
+    final result = <({PlannerEvent event, int col, int cols})>[];
+
+    var i = 0;
+    while (i < sorted.length) {
+      // Grow a cluster of transitively-overlapping events.
+      var clusterEnd = sorted[i].endAt;
+      final cluster = <PlannerEvent>[sorted[i]];
+      var j = i + 1;
+      while (j < sorted.length && sorted[j].startAt.isBefore(clusterEnd)) {
+        cluster.add(sorted[j]);
+        if (sorted[j].endAt.isAfter(clusterEnd)) clusterEnd = sorted[j].endAt;
+        j++;
+      }
+
+      // First-fit column assignment within the cluster.
+      final columnEnds = <DateTime>[];
+      final columns = <int>[];
+      for (final event in cluster) {
+        var placed = -1;
+        for (var c = 0; c < columnEnds.length; c++) {
+          if (!event.startAt.isBefore(columnEnds[c])) {
+            placed = c;
+            columnEnds[c] = event.endAt;
+            break;
+          }
+        }
+        if (placed == -1) {
+          placed = columnEnds.length;
+          columnEnds.add(event.endAt);
+        }
+        columns.add(placed);
+      }
+
+      final colCount = columnEnds.length;
+      for (var k = 0; k < cluster.length; k++) {
+        result.add((event: cluster[k], col: columns[k], cols: colCount));
+      }
+      i = j;
+    }
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
@@ -1022,7 +1278,7 @@ class _HourlyTimeline extends StatelessWidget {
         SizedBox(
           height: timelineHeight,
           child: Stack(
-            clipBehavior: Clip.none,
+            clipBehavior: Clip.hardEdge,
             children: [
               // Hour grid: labels + vertical divider line
               Column(
@@ -1043,24 +1299,43 @@ class _HourlyTimeline extends StatelessWidget {
                       ),
                     ),
                   ),
-              // Event cards positioned at start time
-              for (final e in timedEvents)
-                Positioned(
-                  left: _cardLeft,
-                  right: 8,
-                  top: _topFor(e),
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: _EventCard(
-                      event: e,
-                      calendar: state.calendarById(e.calendarId),
-                      colorCard: colorCard,
-                      compact: true,
-                      suppressLeftBar: true,
-                      onTap: () => onEventTap(e),
-                    ),
-                  ),
+              // Event cards positioned at start time, split into columns so
+              // overlapping events sit side by side instead of stacking.
+              Positioned.fill(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final available = constraints.maxWidth - _cardLeft - 8;
+                    final placements = _layoutColumns(timedEvents);
+                    return Stack(
+                      clipBehavior: Clip.hardEdge,
+                      children: [
+                        for (final p in placements)
+                          Positioned(
+                            top: _topFor(p.event),
+                            left: _cardLeft +
+                                (p.cols > 1
+                                    ? p.col * (available / p.cols)
+                                    : 0),
+                            width: p.cols > 1
+                                ? (available / p.cols) - 4
+                                : available,
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: _EventCard(
+                                event: p.event,
+                                calendar: state.calendarById(p.event.calendarId),
+                                colorCard: colorCard,
+                                compact: true,
+                                suppressLeftBar: true,
+                                onTap: () => onEventTap(p.event),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
                 ),
+              ),
               // Current time indicator
               if (isToday && now.hour >= _startHour && now.hour < _endHour)
                 Positioned(
@@ -1140,6 +1415,7 @@ class _BottomPlannerBar extends StatelessWidget {
     required this.onMonthPressed,
     required this.onTodayPressed,
     required this.onFilterPressed,
+    required this.onAddEvent,
   });
 
   final VoidCallback onPrevDay;
@@ -1147,13 +1423,14 @@ class _BottomPlannerBar extends StatelessWidget {
   final VoidCallback onMonthPressed;
   final VoidCallback onTodayPressed;
   final VoidCallback onFilterPressed;
+  final VoidCallback onAddEvent;
 
   @override
   Widget build(BuildContext context) {
     final tones = context.plannerTones;
     return Center(
       child: Container(
-        height: 54,
+        height: 56,
         decoration: BoxDecoration(
           color: tones.bottomBar.withValues(alpha: 0.97),
           borderRadius: BorderRadius.circular(20),
@@ -1169,17 +1446,59 @@ class _BottomPlannerBar extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _BarButton(icon: Icons.chevron_left_rounded, onTap: onPrevDay),
               _BarButton(
-                icon: Icons.access_time_rounded,
+                icon: Icons.chevron_left_rounded,
+                tooltip: 'Previous day',
+                onTap: onPrevDay,
+              ),
+              _BarButton(
+                icon: Icons.today_rounded,
+                tooltip: 'Jump to today',
                 onTap: onTodayPressed,
               ),
-              _BarButton(icon: Icons.tune_rounded, onTap: onFilterPressed),
+              // Primary, always-available create action.
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Tooltip(
+                  message: 'New event',
+                  child: GestureDetector(
+                    onTap: onAddEvent,
+                    behavior: HitTestBehavior.opaque,
+                    child: Semantics(
+                      button: true,
+                      label: 'New event',
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: context.plannerAccent,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(
+                          Icons.add_rounded,
+                          color: context.onPlannerAccent,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              _BarButton(
+                icon: Icons.tune_rounded,
+                tooltip: 'Filter calendars',
+                onTap: onFilterPressed,
+              ),
               _BarButton(
                 icon: Icons.calendar_view_month_rounded,
+                tooltip: 'Month overview',
                 onTap: onMonthPressed,
               ),
-              _BarButton(icon: Icons.chevron_right_rounded, onTap: onNextDay),
+              _BarButton(
+                icon: Icons.chevron_right_rounded,
+                tooltip: 'Next day',
+                onTap: onNextDay,
+              ),
             ],
           ),
         ),
@@ -1189,19 +1508,36 @@ class _BottomPlannerBar extends StatelessWidget {
 }
 
 class _BarButton extends StatelessWidget {
-  const _BarButton({required this.icon, required this.onTap});
+  const _BarButton({
+    required this.icon,
+    required this.onTap,
+    required this.tooltip,
+  });
 
   final IconData icon;
   final VoidCallback onTap;
+  final String tooltip;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        child: Icon(icon, color: context.plannerTones.ink, size: 22),
+    return Tooltip(
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        label: tooltip,
+        child: GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          // 48dp minimum touch target.
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: SizedBox(
+              width: 24,
+              height: 48,
+              child: Icon(icon, color: context.plannerTones.ink, size: 22),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1310,7 +1646,7 @@ class _PlannerMenu extends ConsumerWidget {
               ),
               const SizedBox(height: 24),
               Text(
-                'TIMEPAGE',
+                'DAYVEN',
                 style: textTheme.displayMedium?.copyWith(
                   fontSize: 30,
                   color: Colors.white,
@@ -1432,7 +1768,9 @@ class _PlannerMenu extends ConsumerWidget {
 }
 
 class _EmptyDayState extends StatelessWidget {
-  const _EmptyDayState();
+  const _EmptyDayState({required this.onAddEvent});
+
+  final VoidCallback onAddEvent;
 
   @override
   Widget build(BuildContext context) {
@@ -1449,9 +1787,26 @@ class _EmptyDayState extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              'Use the add button to create an event for this day.',
+              'Add an event to start planning this day.',
               style: Theme.of(context).textTheme.bodyMedium,
               textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: onAddEvent,
+              style: FilledButton.styleFrom(
+                backgroundColor: context.plannerAccent,
+                foregroundColor: context.onPlannerAccent,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('New event'),
             ),
           ],
         ),

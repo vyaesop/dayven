@@ -172,7 +172,7 @@ class _FeatureScaffold extends ConsumerWidget {
     final accent = preferences.accentPalette.color;
     // Settings panels live on a darkened version of the active surface so the
     // user gets a consistent "drawer-like" feel even in light themes — matching
-    // the Timepage design where the chrome around setting groups is always a
+    // the design where the chrome around setting groups is always a
     // dim charcoal regardless of mode, with subtle tonal shifts.
     final background = switch (preferences.themeMode) {
       PlannerThemeMode.mono => const Color(0xFF6A6860),
@@ -319,33 +319,15 @@ class _GeneralSettings extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SettingsGroup(
-          title: 'Preferences',
-          children: [
-            _SwitchRow(
-              title: 'Sync preferences between my devices',
-              value: false,
-            ),
-          ],
-        ),
-        const _SettingsGroup(
-          title: 'Status Bar',
-          children: [_SwitchRow(title: 'Status Bar Visible', value: true)],
-        ),
         _SettingsGroup(
           title: 'Day View',
           children: [
-            const _SwitchRow(title: 'Schedule', value: true),
             _SwitchRow(
-              title: 'Actions',
+              title: 'Quick add button',
+              note: 'Floating + button on the timeline',
               value: prefs.showActions,
               onChanged: (v) =>
                   notifier.setBoolPreference(PreferenceKeys.showActions, v),
-            ),
-            const _SwitchRow(
-              title: 'On This Day',
-              value: true,
-              note: 'On empty days',
             ),
             _SwitchRow(
               title: 'Weather card',
@@ -595,10 +577,21 @@ class _CalendarSettingsSurface extends ConsumerWidget {
           ],
         ),
         _SettingsGroup(
+          title: 'Rename Calendars',
+          children: [
+            for (final calendar in calendars)
+              _CalendarRenameRow(
+                calendar: calendar,
+                onRename: (newName) =>
+                    plannerController.renameCalendar(calendar.id, newName),
+              ),
+          ],
+        ),
+        _SettingsGroup(
           title: 'Display',
           children: [
             _SwitchRow(
-              title: 'Match to Timepage colors',
+              title: 'Match timeline to calendar colors',
               value: prefs.matchTimelineColors,
               onChanged: (value) => prefController.setBoolPreference(
                 PreferenceKeys.matchTimelineColors,
@@ -608,6 +601,96 @@ class _CalendarSettingsSurface extends ConsumerWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+class _CalendarRenameRow extends StatefulWidget {
+  const _CalendarRenameRow({
+    required this.calendar,
+    required this.onRename,
+  });
+
+  final PlannerCalendar calendar;
+  final Future<void> Function(String newName) onRename;
+
+  @override
+  State<_CalendarRenameRow> createState() => _CalendarRenameRowState();
+}
+
+class _CalendarRenameRowState extends State<_CalendarRenameRow> {
+  bool _saving = false;
+
+  Future<void> _showRenameDialog() async {
+    final ctrl = TextEditingController(text: widget.calendar.name);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename Calendar'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            hintText: 'Calendar name',
+          ),
+          onSubmitted: (v) {
+            if (v.trim().isNotEmpty) Navigator.of(ctx).pop(v.trim());
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final v = ctrl.text.trim();
+              if (v.isNotEmpty) Navigator.of(ctx).pop(v);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (newName == null || newName == widget.calendar.name) return;
+    setState(() => _saving = true);
+    try {
+      await widget.onRename(newName);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.secondary;
+    return InkWell(
+      onTap: _saving ? null : _showRenameDialog,
+      borderRadius: BorderRadius.circular(14),
+      child: _SettingTile(
+        title: widget.calendar.name,
+        leading: Container(
+          width: 14,
+          height: 14,
+          decoration: BoxDecoration(
+            color: widget.calendar.color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        trailing: _saving
+            ? SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: accent,
+                ),
+              )
+            : Icon(Icons.edit_rounded, color: accent, size: 18),
+      ),
     );
   }
 }
@@ -1025,9 +1108,9 @@ class _SmartAlertsSurface extends ConsumerWidget {
                     if (value?.lastTitle.isNotEmpty == true)
                       _InfoRow(title: 'Last message', value: value!.lastTitle),
                     if (value?.error.isNotEmpty == true)
-                      _InfoRow(
-                        title: 'Setup note',
-                        value: 'Needs Firebase config',
+                      const _InfoRow(
+                        title: 'Status',
+                        value: 'Unavailable on this device',
                       ),
                   ],
                 ),
@@ -1244,16 +1327,16 @@ class _TextSizeSurfaceState extends ConsumerState<_TextSizeSurface> {
           }),
         ),
         const SizedBox(height: 24),
-        const _SettingsGroup(
-          title: 'Dynamic Type',
-          children: [_SwitchRow(title: 'Use device text size', value: true)],
-        ),
         _SettingsGroup(
           title: 'Preview',
           children: [
             _InfoRow(
-              title: 'Current scale',
+              title: 'In-app scale',
               value: '${(scale * 100).round()}%',
+            ),
+            const _InfoRow(
+              title: 'Dynamic Type',
+              value: 'Follows device size',
             ),
           ],
         ),
@@ -1483,14 +1566,10 @@ class _AccountSurface extends ConsumerWidget {
         ),
         const SizedBox(height: 18),
         const _SettingsGroup(
-          title: 'Account Safety',
+          title: 'Legal',
           children: [
-            _InfoRow(title: 'Privacy Policy', value: 'Required before release'),
-            _InfoRow(
-              title: 'Terms of Service',
-              value: 'Required before release',
-            ),
-            _InfoRow(title: 'Delete account', value: 'Flow scaffolded'),
+            _InfoRow(title: 'Privacy Policy', value: 'See store listing'),
+            _InfoRow(title: 'Terms of Service', value: 'See store listing'),
           ],
         ),
       ],
@@ -1516,7 +1595,7 @@ class _PaywallSurface extends ConsumerWidget {
         const _HeroPanel(
           title: 'Plan beautifully',
           body:
-              'Unlock all themes, smart alerts, and cloud sync. A Play Billing / RevenueCat membership screen matching the premium screens in the designs.',
+              'Unlock every theme and accent, smart weather alerts, and cloud sync across your devices.',
           icon: Icons.workspace_premium_rounded,
           iconColor: AppColors.gold,
         ),
@@ -2448,7 +2527,7 @@ class _WhatsNewSurface extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const _HeroPanel(
-          title: "What's new in Vertical Planner",
+          title: "What's new in Dayven",
           body: 'Local-first planner — every feature works fully offline.',
           icon: Icons.new_releases_rounded,
           iconColor: AppColors.gold,
@@ -3640,7 +3719,7 @@ class _WelcomeSurfaceState extends State<_WelcomeSurface> {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'We hope you enjoy Vertical Planner!',
+                        'We hope you enjoy Dayven!',
                         style: textTheme.bodyLarge?.copyWith(
                           color: Colors.white70,
                         ),

@@ -198,11 +198,13 @@ class PushNotificationService {
       return;
     }
 
-    final fireAt = event.startAt.subtract(lead);
-    if (!fireAt.isAfter(DateTime.now())) {
-      // Reminder time has already passed; do not schedule.
+    final now = DateTime.now();
+    final occurrenceStart = _nextReminderStart(event, lead, now);
+    if (occurrenceStart == null) {
+      // No upcoming occurrence whose reminder is still in the future.
       return;
     }
+    final fireAt = occurrenceStart.subtract(lead);
 
     final scheduled = tz.TZDateTime.from(fireAt, tz.local);
 
@@ -276,6 +278,40 @@ class PushNotificationService {
     return 0x40000000 | (hash & 0x3FFFFFFF);
   }
 
+  /// The start time of the next occurrence whose reminder fire time is still in
+  /// the future. For non-repeating events this is simply the event start (if its
+  /// reminder hasn't passed). For recurring events we walk forward through the
+  /// series to find the next occurrence to remind about.
+  DateTime? _nextReminderStart(PlannerEvent event, Duration lead, DateTime now) {
+    final recurrence = event.effectiveRecurrence;
+    if (!recurrence.repeats) {
+      return event.startAt.subtract(lead).isAfter(now) ? event.startAt : null;
+    }
+
+    final anchor = DateTime(
+      event.startAt.year,
+      event.startAt.month,
+      event.startAt.day,
+    );
+    // Look ahead far enough to cover sparse rules (e.g. yearly).
+    final horizon = DateTime(now.year + 2, now.month, now.day);
+    for (final date in recurrence.occurrenceDates(anchor, horizon)) {
+      final start = event.isAllDay
+          ? DateTime(date.year, date.month, date.day)
+          : DateTime(
+              date.year,
+              date.month,
+              date.day,
+              event.startAt.hour,
+              event.startAt.minute,
+            );
+      if (start.subtract(lead).isAfter(now)) {
+        return start;
+      }
+    }
+    return null;
+  }
+
   Duration? _leadDurationFor(PlannerReminder reminder) {
     switch (reminder) {
       case PlannerReminder.none:
@@ -343,7 +379,7 @@ class PushNotificationService {
 
     await _localNotifications.show(
       id: message.hashCode,
-      title: title ?? 'Vertical Planner',
+      title: title ?? 'Dayven',
       body: body ?? '',
       notificationDetails: details,
       payload: message.data['route']?.toString(),
@@ -363,7 +399,7 @@ class PushNotificationService {
     );
     await _localNotifications.show(
       id: DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
-      title: 'Vertical Planner',
+      title: 'Dayven',
       body: 'Test notification — channel and permissions are working.',
       notificationDetails: details,
     );

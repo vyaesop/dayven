@@ -7,8 +7,8 @@ import '../features/bootstrap/presentation/storage_mode_screen.dart';
 import '../features/home/presentation/home_screen.dart';
 import '../features/preferences/application/app_preferences_controller.dart';
 
-class VerticalPlannerApp extends ConsumerWidget {
-  const VerticalPlannerApp({super.key});
+class DayvenApp extends ConsumerWidget {
+  const DayvenApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -18,14 +18,18 @@ class VerticalPlannerApp extends ConsumerWidget {
         AppPreferences.defaults();
 
     return MaterialApp(
-      title: 'Vertical Planner',
+      title: 'Dayven',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(preferences),
       builder: (context, child) {
         final mediaQuery = MediaQuery.of(context);
+        // Honour the device's accessibility text size, then apply the in-app
+        // preference on top of it, clamped so layouts never break at extremes.
+        final osScale = mediaQuery.textScaler.scale(1);
+        final combined = (osScale * preferences.textScale).clamp(0.8, 1.6);
         return MediaQuery(
           data: mediaQuery.copyWith(
-            textScaler: TextScaler.linear(preferences.textScale),
+            textScaler: TextScaler.linear(combined),
           ),
           child: child ?? const SizedBox.shrink(),
         );

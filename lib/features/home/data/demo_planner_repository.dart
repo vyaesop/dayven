@@ -6,20 +6,12 @@ import 'planner_repository.dart';
 
 class DemoPlannerRepository implements PlannerRepository {
   DemoPlannerRepository()
-    : _calendars = const [
-        PlannerCalendar(
-          id: 'calendar',
-          name: 'Calendar',
-          color: AppColors.lilac,
-        ),
-        PlannerCalendar(
-          id: 'exercise',
-          name: 'Exercise',
-          color: Color(0xFFF197A6),
-        ),
-        PlannerCalendar(id: 'family', name: 'Family', color: AppColors.coral),
-        PlannerCalendar(id: 'friends', name: 'Friends', color: AppColors.sage),
-        PlannerCalendar(id: 'work', name: 'Work', color: AppColors.graphite),
+    : _calendars = [
+        const PlannerCalendar(id: 'calendar', name: 'Calendar', color: AppColors.lilac),
+        const PlannerCalendar(id: 'exercise', name: 'Exercise', color: Color(0xFFF197A6)),
+        const PlannerCalendar(id: 'family', name: 'Family', color: AppColors.coral),
+        const PlannerCalendar(id: 'friends', name: 'Friends', color: AppColors.sage),
+        const PlannerCalendar(id: 'work', name: 'Work', color: AppColors.graphite),
       ],
       _events = [
         PlannerEvent(
@@ -115,13 +107,38 @@ class DemoPlannerRepository implements PlannerRepository {
   Future<PlannerState> loadInitialState() async {
     await Future<void>.delayed(const Duration(milliseconds: 180));
 
+    final today = DateTime.now();
+    final todayNorm = DateTime(today.year, today.month, today.day);
     return PlannerState(
-      selectedDate: DateTime(2026, 5, 14),
-      focusedMonth: DateTime(2026, 5),
+      selectedDate: todayNorm,
+      focusedMonth: DateTime(todayNorm.year, todayNorm.month),
       calendars: List<PlannerCalendar>.from(_calendars),
       visibleCalendarIds: _calendars.map((calendar) => calendar.id).toList(),
       events: List<PlannerEvent>.from(_events),
     );
+  }
+
+  @override
+  Future<PlannerCalendar> createCalendar(String name, Color color) async {
+    final calendar = PlannerCalendar(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      name: name,
+      color: color,
+    );
+    _calendars.add(calendar);
+    return calendar;
+  }
+
+  @override
+  Future<void> renameCalendar(String id, String newName) async {
+    final index = _calendars.indexWhere((c) => c.id == id);
+    if (index >= 0) {
+      _calendars[index] = PlannerCalendar(
+        id: id,
+        name: newName,
+        color: _calendars[index].color,
+      );
+    }
   }
 
   @override
@@ -137,7 +154,8 @@ class DemoPlannerRepository implements PlannerRepository {
       note: draft.note,
       calendarId: draft.calendarId,
       reminder: draft.reminder,
-      repeatRule: draft.repeatRule,
+      repeatRule: draft.effectiveRecurrence.frequency,
+      recurrence: draft.effectiveRecurrence,
       attendees: draft.attendees,
     );
 

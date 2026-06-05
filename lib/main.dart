@@ -18,5 +18,5 @@ Future<void> main() async {
     };
   }
 
-  runApp(const ProviderScope(child: VerticalPlannerApp()));
+  runApp(const ProviderScope(child: DayvenApp()));
 }

@@ -52,20 +52,15 @@ class _MonthOverviewSheetState extends State<_MonthOverviewSheet> {
     final monthDays = _buildMonthDays(_focusedMonth);
     final eventCountByDay = <int, int>{};
 
-    for (final event in widget.state.filteredEvents) {
-      if (event.startAt.year == _focusedMonth.year &&
-          event.startAt.month == _focusedMonth.month) {
-        eventCountByDay[event.startAt.day] =
-            (eventCountByDay[event.startAt.day] ?? 0) + 1;
-      }
+    // Expand recurring series into their occurrences within this month.
+    final monthEvents = widget.state.eventsInMonth(
+      _focusedMonth.year,
+      _focusedMonth.month,
+    );
+    for (final event in monthEvents) {
+      eventCountByDay[event.startAt.day] =
+          (eventCountByDay[event.startAt.day] ?? 0) + 1;
     }
-
-    final monthEvents = widget.state.filteredEvents
-        .where((event) =>
-            event.startAt.year == _focusedMonth.year &&
-            event.startAt.month == _focusedMonth.month)
-        .toList()
-      ..sort((a, b) => a.startAt.compareTo(b.startAt));
 
     final today = DateTime.now();
     final isCurrentMonth = _focusedMonth.year == today.year &&
@@ -301,6 +296,7 @@ class _MonthOverviewSheetState extends State<_MonthOverviewSheet> {
   List<DateTime?> _buildMonthDays(DateTime date) {
     final firstOfMonth = DateTime(date.year, date.month, 1);
     final daysInMonth = DateUtils.getDaysInMonth(date.year, date.month);
+    // Sunday-led grid: how many blank leading cells before the 1st.
     final leadingBlankCount = firstOfMonth.weekday % 7;
     final result = <DateTime?>[
       for (var i = 0; i < leadingBlankCount; i++) null,
@@ -308,7 +304,10 @@ class _MonthOverviewSheetState extends State<_MonthOverviewSheet> {
         DateTime(date.year, date.month, day),
     ];
 
-    while (result.length < 35) {
+    // Pad up to a whole number of weeks so the last days of long months that
+    // span 6 weeks (e.g. a 31-day month starting on Saturday) are never dropped.
+    final trailing = (7 - result.length % 7) % 7;
+    for (var i = 0; i < trailing; i++) {
       result.add(null);
     }
 

@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../features/preferences/application/app_preferences_controller.dart';
 
-/// Base reference colors. Anything that is genuinely brand-neutral (Timepage's
+/// Base reference colors. Anything that is genuinely brand-neutral (the
 /// charcoal, parchment, dotted shadow, etc.) lives here. Accent-driven colors
 /// must always come from the active [ThemeData] / [PlannerSurfaceTones] so they
 /// follow the user's pick.
@@ -24,6 +24,37 @@ class AppColors {
   /// Fallback gold accent. Prefer reading the live accent from
   /// `Theme.of(context).colorScheme.secondary` so the user's pick flows through.
   static const Color gold = Color(0xFFE8BB42);
+}
+
+Color parsePlannerColor(String? rawColor, {Color fallback = AppColors.lilac}) {
+  if (rawColor == null) {
+    return fallback;
+  }
+
+  final input = rawColor.trim();
+  if (input.isEmpty) {
+    return fallback;
+  }
+
+  final decimalColorMatch = RegExp(r'^Color\((\d+)\)$').firstMatch(input);
+  if (decimalColorMatch != null) {
+    final value = int.tryParse(decimalColorMatch.group(1)!);
+    if (value != null) {
+      return Color(value);
+    }
+  }
+
+  final hexMatch = RegExp(
+    r'(?:#|0x|0X)?([0-9a-fA-F]{8}|[0-9a-fA-F]{6})(?![0-9a-fA-F])',
+  ).firstMatch(input);
+  if (hexMatch == null) {
+    return fallback;
+  }
+
+  final hex = hexMatch.group(1)!;
+  final normalized = hex.length == 6 ? 'FF$hex' : hex;
+  final value = int.tryParse(normalized, radix: 16);
+  return value == null ? fallback : Color(value);
 }
 
 /// Resolved colors for a specific [PlannerThemeMode]. Held on [ThemeData] via
@@ -101,7 +132,10 @@ class PlannerSurfaceTones extends ThemeExtension<PlannerSurfaceTones> {
   }
 
   @override
-  PlannerSurfaceTones lerp(ThemeExtension<PlannerSurfaceTones>? other, double t) {
+  PlannerSurfaceTones lerp(
+    ThemeExtension<PlannerSurfaceTones>? other,
+    double t,
+  ) {
     if (other is! PlannerSurfaceTones) return this;
     return PlannerSurfaceTones(
       mode: t < 0.5 ? mode : other.mode,
@@ -153,22 +187,20 @@ ThemeData buildAppTheme([AppPreferences? preferences]) {
       : (isDark ? const Color(0xFFF3EFE5) : AppColors.charcoal);
   final onPrimary = _onColorFor(primary);
 
-  final colorScheme = (isDark
-          ? const ColorScheme.dark()
-          : const ColorScheme.light())
-      .copyWith(
-    primary: primary,
-    onPrimary: onPrimary,
-    secondary: accent,
-    onSecondary: tones.onAccent,
-    surface: tones.surface,
-    onSurface: tones.ink,
-    surfaceContainer: tones.surfaceSoft,
-    surfaceContainerHighest: tones.surfaceRaised,
-    outline: tones.line,
-    outlineVariant: tones.line.withValues(alpha: 0.55),
-    shadow: tones.shadow,
-  );
+  final colorScheme =
+      (isDark ? const ColorScheme.dark() : const ColorScheme.light()).copyWith(
+        primary: primary,
+        onPrimary: onPrimary,
+        secondary: accent,
+        onSecondary: tones.onAccent,
+        surface: tones.surface,
+        onSurface: tones.ink,
+        surfaceContainer: tones.surfaceSoft,
+        surfaceContainerHighest: tones.surfaceRaised,
+        outline: tones.line,
+        outlineVariant: tones.line.withValues(alpha: 0.55),
+        shadow: tones.shadow,
+      );
 
   final base = ThemeData(
     useMaterial3: true,
@@ -343,6 +375,7 @@ PlannerSurfaceTones _tonesFor(PlannerThemeMode mode, Color accent) {
 }
 
 Color _onColorFor(Color background) {
-  final lum = (0.299 * background.r + 0.587 * background.g + 0.114 * background.b);
+  final lum =
+      (0.299 * background.r + 0.587 * background.g + 0.114 * background.b);
   return lum > 0.62 ? const Color(0xFF18171A) : Colors.white;
 }

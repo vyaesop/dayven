@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../../../app/theme/app_theme.dart';
 import '../domain/planner_models.dart';
 
+/// Which occurrences an edit/delete applies to for a recurring series.
+enum EventEditScope { thisEvent, allEvents }
+
 Future<void> showEventEditorSheet({
   required BuildContext context,
   required DateTime selectedDate,
@@ -11,6 +14,8 @@ Future<void> showEventEditorSheet({
   Future<void> Function(PlannerEventDraft draft)? onCreate,
   Future<void> Function(PlannerEvent event)? onUpdate,
   Future<void> Function(String eventId)? onDelete,
+  Future<void> Function(PlannerEvent template)? onEditSeriesAll,
+  Future<void> Function(String seriesId, DateTime date)? onExcludeOccurrence,
   PlannerEvent? initialEvent,
 }) {
   return showModalBottomSheet<void>(
@@ -24,6 +29,8 @@ Future<void> showEventEditorSheet({
       onCreate: onCreate,
       onUpdate: onUpdate,
       onDelete: onDelete,
+      onEditSeriesAll: onEditSeriesAll,
+      onExcludeOccurrence: onExcludeOccurrence,
       initialEvent: initialEvent,
     ),
   );
@@ -37,6 +44,8 @@ class _EventEditorSheet extends StatefulWidget {
     this.onCreate,
     this.onUpdate,
     this.onDelete,
+    this.onEditSeriesAll,
+    this.onExcludeOccurrence,
     this.initialEvent,
   });
 
@@ -46,6 +55,9 @@ class _EventEditorSheet extends StatefulWidget {
   final Future<void> Function(PlannerEventDraft draft)? onCreate;
   final Future<void> Function(PlannerEvent event)? onUpdate;
   final Future<void> Function(String eventId)? onDelete;
+  final Future<void> Function(PlannerEvent template)? onEditSeriesAll;
+  final Future<void> Function(String seriesId, DateTime date)?
+      onExcludeOccurrence;
   final PlannerEvent? initialEvent;
 
   @override
@@ -64,7 +76,7 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
   late TimeOfDay _endTime;
   late String _calendarId;
   late PlannerReminder _reminder;
-  late PlannerRepeatRule _repeatRule;
+  late PlannerRecurrence _recurrence;
   bool _isSaving = false;
 
   bool get _isEditing => widget.initialEvent != null;
@@ -120,7 +132,7 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
         widget.defaultCalendarId ??
         widget.calendars.first.id;
     _reminder = initialEvent?.reminder ?? PlannerReminder.none;
-    _repeatRule = initialEvent?.repeatRule ?? PlannerRepeatRule.never;
+    _recurrence = initialEvent?.effectiveRecurrence ?? PlannerRecurrence.none;
   }
 
   @override
@@ -185,8 +197,8 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
                       FilledButton(
                         onPressed: _isSaving ? null : _handleSave,
                         style: FilledButton.styleFrom(
-                          backgroundColor: AppColors.charcoal,
-                          foregroundColor: Colors.white,
+                          backgroundColor: context.plannerAccent,
+                          foregroundColor: context.onPlannerAccent,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                           ),
@@ -299,7 +311,7 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
                         const SizedBox(height: 10),
                         _ActionRow(
                           title: 'Repeats',
-                          value: _repeatRule.label,
+                          value: _recurrence.repeats ? _recurrence.summary : 'Never',
                           onTap: _pickRepeatRule,
                         ),
                       ],
@@ -460,49 +472,108 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
       return;
     }
 
+    final original = widget.initialEvent;
+    final isRecurringSeries =
+        original != null && original.effectiveRecurrence.repeats;
+
+    // Ask scope up-front (before showing the spinner) for recurring edits.
+    EventEditScope? scope;
+    if (isRecurringSeries) {
+      scope = await _showEditScopeDialog(isDelete: false);
+      if (scope == null) return; // cancelled
+    }
+
     setState(() {
       _isSaving = true;
     });
 
+    final location = _locationController.text.trim();
+    final url = _urlController.text.trim();
+    final note = _noteController.text.trim();
+    final attendees = _parseAttendees();
+
     try {
-      if (_isEditing) {
-        final original = widget.initialEvent!;
-        if (original.repeatRule != PlannerRepeatRule.never) {
-          final choice = await _showEditRepeatingDialog();
-          if (choice == null) {
-            if (mounted) setState(() => _isSaving = false);
-            return;
-          }
-        }
-        await widget.onUpdate?.call(
-          original.copyWith(
-            title: title,
-            isAllDay: _isAllDay,
-            startAt: startAt,
-            endAt: endAt,
-            location: _locationController.text.trim(),
-            url: _urlController.text.trim(),
-            note: _noteController.text.trim(),
-            calendarId: _calendarId,
-            reminder: _reminder,
-            repeatRule: _repeatRule,
-            attendees: _parseAttendees(),
-          ),
-        );
-      } else {
+      if (original == null) {
+        // Brand new event.
         await widget.onCreate?.call(
           PlannerEventDraft(
             title: title,
             isAllDay: _isAllDay,
             startAt: startAt,
             endAt: endAt,
-            location: _locationController.text.trim(),
-            url: _urlController.text.trim(),
-            note: _noteController.text.trim(),
+            location: location,
+            url: url,
+            note: note,
             calendarId: _calendarId,
             reminder: _reminder,
-            repeatRule: _repeatRule,
-            attendees: _parseAttendees(),
+            repeatRule: _recurrence.frequency,
+            attendees: attendees,
+            recurrence: _recurrence,
+          ),
+        );
+      } else if (!isRecurringSeries) {
+        // Plain single event update.
+        await widget.onUpdate?.call(
+          original.copyWith(
+            title: title,
+            isAllDay: _isAllDay,
+            startAt: startAt,
+            endAt: endAt,
+            location: location,
+            url: url,
+            note: note,
+            calendarId: _calendarId,
+            reminder: _reminder,
+            repeatRule: _recurrence.frequency,
+            recurrence: _recurrence,
+            attendees: attendees,
+          ),
+        );
+      } else if (scope == EventEditScope.allEvents) {
+        // Apply the edit to the whole series. The id carried here is the
+        // series base id so the controller updates the stored series.
+        final seriesId = original.seriesId ?? original.id;
+        await widget.onEditSeriesAll?.call(
+          original.copyWith(
+            id: seriesId,
+            title: title,
+            isAllDay: _isAllDay,
+            startAt: startAt,
+            endAt: endAt,
+            location: location,
+            url: url,
+            note: note,
+            calendarId: _calendarId,
+            reminder: _reminder,
+            repeatRule: _recurrence.frequency,
+            recurrence: _recurrence,
+            attendees: attendees,
+          ),
+        );
+      } else {
+        // "This event only": detach the occurrence from the series and store a
+        // standalone, non-repeating override.
+        final seriesId = original.seriesId ?? original.id;
+        final occurrenceDate = original.occurrenceDate ??
+            DateTime(
+              original.startAt.year,
+              original.startAt.month,
+              original.startAt.day,
+            );
+        await widget.onExcludeOccurrence?.call(seriesId, occurrenceDate);
+        await widget.onCreate?.call(
+          PlannerEventDraft(
+            title: title,
+            isAllDay: _isAllDay,
+            startAt: startAt,
+            endAt: endAt,
+            location: location,
+            url: url,
+            note: note,
+            calendarId: _calendarId,
+            reminder: _reminder,
+            repeatRule: PlannerRepeatRule.never,
+            attendees: attendees,
           ),
         );
       }
@@ -522,15 +593,36 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
   }
 
   Future<void> _handleDelete() async {
-    if (widget.initialEvent == null || widget.onDelete == null) return;
+    final original = widget.initialEvent;
+    if (original == null) return;
 
-    final confirmed = await _showDeleteConfirmation();
-    if (confirmed != true) return;
+    final isRecurringSeries = original.effectiveRecurrence.repeats;
+    EventEditScope? scope;
+    if (isRecurringSeries) {
+      scope = await _showEditScopeDialog(isDelete: true);
+      if (scope == null) return;
+    } else {
+      final confirmed = await _showDeleteConfirmation();
+      if (confirmed != true) return;
+    }
 
     setState(() => _isSaving = true);
 
     try {
-      await widget.onDelete!(widget.initialEvent!.id);
+      if (!isRecurringSeries) {
+        await widget.onDelete?.call(original.id);
+      } else if (scope == EventEditScope.allEvents) {
+        await widget.onDelete?.call(original.seriesId ?? original.id);
+      } else {
+        final seriesId = original.seriesId ?? original.id;
+        final occurrenceDate = original.occurrenceDate ??
+            DateTime(
+              original.startAt.year,
+              original.startAt.month,
+              original.startAt.day,
+            );
+        await widget.onExcludeOccurrence?.call(seriesId, occurrenceDate);
+      }
       if (mounted) Navigator.of(context).pop();
     } catch (_) {
       _showMessage('Could not delete this event.');
@@ -630,16 +722,19 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
     );
   }
 
-  // Returns true = edit all future, false = only this, null = cancelled
-  Future<bool?> _showEditRepeatingDialog() {
-    return showModalBottomSheet<bool>(
+  /// Asks whether an edit/delete on a recurring event applies to just this
+  /// occurrence or the whole series. Returns null when cancelled.
+  Future<EventEditScope?> _showEditScopeDialog({required bool isDelete}) {
+    final tones = context.plannerTones;
+    final verb = isDelete ? 'Delete' : 'Edit';
+    return showModalBottomSheet<EventEditScope>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
         final textTheme = Theme.of(ctx).textTheme;
         return Container(
           decoration: BoxDecoration(
-            color: Theme.of(ctx).scaffoldBackgroundColor,
+            color: tones.scaffold,
             borderRadius:
                 const BorderRadius.vertical(top: Radius.circular(28)),
           ),
@@ -654,7 +749,7 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
                     width: 46,
                     height: 5,
                     decoration: BoxDecoration(
-                      color: AppColors.mutedInk.withValues(alpha: 0.3),
+                      color: tones.mutedInk.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(999),
                     ),
                   ),
@@ -662,28 +757,30 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
                   Text(
                     'This is a repeating event',
                     style: textTheme.bodyMedium?.copyWith(
-                      color: AppColors.mutedInk,
+                      color: tones.mutedInk,
                     ),
                   ),
                   const SizedBox(height: 16),
                   _EditRepeatOption(
-                    label: 'Edit all future events',
-                    onTap: () => Navigator.of(ctx).pop(true),
+                    label: '$verb this event only',
+                    onTap: () =>
+                        Navigator.of(ctx).pop(EventEditScope.thisEvent),
                     textTheme: textTheme,
                   ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  Divider(height: 1, indent: 16, endIndent: 16, color: tones.line),
                   _EditRepeatOption(
-                    label: 'Edit only this event',
-                    onTap: () => Navigator.of(ctx).pop(false),
+                    label: '$verb all events in the series',
+                    onTap: () =>
+                        Navigator.of(ctx).pop(EventEditScope.allEvents),
                     textTheme: textTheme,
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
                     child: TextButton(
-                      onPressed: () => Navigator.of(ctx).pop(null),
+                      onPressed: () => Navigator.of(ctx).pop(),
                       style: TextButton.styleFrom(
-                        foregroundColor: AppColors.mutedInk,
+                        foregroundColor: tones.mutedInk,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                       child: const Text('Cancel'),
@@ -719,14 +816,17 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
   }
 
   Future<void> _pickRepeatRule() async {
-    final selected = await showModalBottomSheet<PlannerRepeatRule>(
+    final selected = await showModalBottomSheet<PlannerRecurrence>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (ctx) => _RepeatRuleSheet(current: _repeatRule),
+      builder: (ctx) => _RepeatRuleSheet(
+        current: _recurrence,
+        anchorDate: _selectedDate,
+      ),
     );
     if (selected == null) return;
-    setState(() => _repeatRule = selected);
+    setState(() => _recurrence = selected);
   }
 
 
@@ -752,7 +852,7 @@ class _LabeledField extends StatelessWidget {
           label.toUpperCase(),
           style: Theme.of(
             context,
-          ).textTheme.labelLarge?.copyWith(color: AppColors.mutedInk),
+          ).textTheme.labelLarge?.copyWith(color: context.plannerTones.mutedInk),
         ),
         const SizedBox(height: 10),
         child,
@@ -774,25 +874,31 @@ class _ActionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tones = context.plannerTones;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Ink(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: tones.surfaceRaised,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.line),
+          border: Border.all(color: tones.line),
         ),
         child: Row(
           children: [
-            Text(title, style: Theme.of(context).textTheme.bodyLarge),
-            const Spacer(),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppColors.ink,
-                fontWeight: FontWeight.w700,
+            Expanded(
+              child: Text(title, style: Theme.of(context).textTheme.bodyLarge),
+            ),
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                value,
+                textAlign: TextAlign.right,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: tones.ink,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ],
@@ -952,18 +1058,17 @@ class _ReminderGridCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = value == current;
+    final tones = context.plannerTones;
     return GestureDetector(
       onTap: () => onTap(value),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: selected ? AppColors.coral : Colors.white,
+          color: selected ? AppColors.coral : tones.surfaceRaised,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: selected
-                ? AppColors.coral
-                : AppColors.mutedInk.withValues(alpha: 0.15),
+            color: selected ? AppColors.coral : tones.line,
           ),
         ),
         child: Center(
@@ -971,7 +1076,7 @@ class _ReminderGridCell extends StatelessWidget {
             value.label,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w700,
-              color: selected ? Colors.white : AppColors.ink,
+              color: selected ? Colors.white : tones.ink,
             ),
           ),
         ),
@@ -1009,8 +1114,9 @@ class _ReminderTile extends StatelessWidget {
 enum _EndsMode { never, afterN, onDate }
 
 class _RepeatRuleSheet extends StatefulWidget {
-  const _RepeatRuleSheet({required this.current});
-  final PlannerRepeatRule current;
+  const _RepeatRuleSheet({required this.current, required this.anchorDate});
+  final PlannerRecurrence current;
+  final DateTime anchorDate;
 
   @override
   State<_RepeatRuleSheet> createState() => _RepeatRuleSheetState();
@@ -1018,11 +1124,13 @@ class _RepeatRuleSheet extends StatefulWidget {
 
 class _RepeatRuleSheetState extends State<_RepeatRuleSheet> {
   late PlannerRepeatRule _selected;
-  int _repeatEvery = 1;
-  _EndsMode _endsMode = _EndsMode.never;
-  int _endsAfterN = 1;
+  late int _repeatEvery;
+  late Set<int> _weekdays;
+  late _EndsMode _endsMode;
+  late int _endsAfterN;
   late DateTime _endsOnDate;
 
+  // The "2 WEEKS" shortcut maps to the [PlannerRepeatRule.biweekly] frequency.
   static const _tabs = [
     PlannerRepeatRule.never,
     PlannerRepeatRule.daily,
@@ -1034,31 +1142,68 @@ class _RepeatRuleSheetState extends State<_RepeatRuleSheet> {
 
   static const _tabLabels = ['OFF', 'DAILY', 'WEEKLY', '2 WEEKS', 'MONTHLY', 'YEARLY'];
 
-  static const _unitLabels = ['', 'day', 'week', 'weeks', 'month', 'year'];
+  static const _unitLabels = ['', 'day', 'week', '', 'month', 'year'];
 
   @override
   void initState() {
     super.initState();
-    _selected = widget.current;
-    _endsOnDate = DateTime.now().add(const Duration(days: 30));
+    final current = widget.current;
+    _selected = current.frequency;
+    _repeatEvery = current.interval.clamp(1, 99);
+    _weekdays = current.byWeekdays.isEmpty
+        ? {widget.anchorDate.weekday}
+        : {...current.byWeekdays};
+    _endsMode = switch (current.endMode) {
+      RecurrenceEndMode.never => _EndsMode.never,
+      RecurrenceEndMode.afterCount => _EndsMode.afterN,
+      RecurrenceEndMode.onDate => _EndsMode.onDate,
+    };
+    _endsAfterN = current.count.clamp(1, 999);
+    _endsOnDate = current.until ?? DateTime.now().add(const Duration(days: 30));
   }
+
+  bool get _isWeekly =>
+      _selected == PlannerRepeatRule.weekly ||
+      _selected == PlannerRepeatRule.biweekly;
+
+  // The interval stepper is hidden for the fixed "2 weeks" shortcut.
+  bool get _showEveryStepper => _selected != PlannerRepeatRule.biweekly;
 
   String get _repeatEveryLabel {
     final idx = _tabs.indexOf(_selected).clamp(0, _tabs.length - 1);
     final unit = _unitLabels[idx];
-    return '$_repeatEvery $unit${_repeatEvery > 1 && idx > 0 ? 's' : ''}';
+    return '$_repeatEvery $unit${_repeatEvery > 1 ? 's' : ''}';
+  }
+
+  PlannerRecurrence _buildResult() {
+    if (_selected == PlannerRepeatRule.never) return PlannerRecurrence.none;
+    return PlannerRecurrence(
+      frequency: _selected,
+      interval: _selected == PlannerRepeatRule.biweekly ? 1 : _repeatEvery,
+      byWeekdays: _isWeekly ? {..._weekdays} : const <int>{},
+      endMode: switch (_endsMode) {
+        _EndsMode.never => RecurrenceEndMode.never,
+        _EndsMode.afterN => RecurrenceEndMode.afterCount,
+        _EndsMode.onDate => RecurrenceEndMode.onDate,
+      },
+      count: _endsAfterN,
+      until: _endsMode == _EndsMode.onDate ? _endsOnDate : null,
+      // Preserve any existing exceptions on the series.
+      exceptions: widget.current.exceptions,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final theme = Theme.of(context);
-    final accent = theme.colorScheme.primary;
+    final tones = context.plannerTones;
+    final accent = theme.colorScheme.secondary;
     final tabIdx = _tabs.indexOf(_selected).clamp(0, _tabs.length - 1);
 
     return Container(
       decoration: BoxDecoration(
-        color: theme.scaffoldBackgroundColor,
+        color: tones.scaffold,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: SafeArea(
@@ -1073,7 +1218,7 @@ class _RepeatRuleSheetState extends State<_RepeatRuleSheet> {
                 child: Container(
                   width: 46, height: 5,
                   decoration: BoxDecoration(
-                    color: AppColors.mutedInk.withValues(alpha: 0.3),
+                    color: tones.mutedInk.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(999),
                   ),
                 ),
@@ -1084,10 +1229,10 @@ class _RepeatRuleSheetState extends State<_RepeatRuleSheet> {
                   Text('Repeats', style: textTheme.headlineMedium),
                   const Spacer(),
                   FilledButton(
-                    onPressed: () => Navigator.of(context).pop(_selected),
+                    onPressed: () => Navigator.of(context).pop(_buildResult()),
                     style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.charcoal,
-                      foregroundColor: Colors.white,
+                      backgroundColor: accent,
+                      foregroundColor: context.onPlannerAccent,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
@@ -1115,19 +1260,19 @@ class _RepeatRuleSheetState extends State<_RepeatRuleSheet> {
                         duration: const Duration(milliseconds: 160),
                         padding: const EdgeInsets.symmetric(horizontal: 14),
                         decoration: BoxDecoration(
-                          color: isSelected ? accent : Colors.white,
+                          color: isSelected ? accent : tones.surfaceRaised,
                           borderRadius: BorderRadius.circular(999),
                           border: Border.all(
-                            color: isSelected
-                                ? accent
-                                : AppColors.mutedInk.withValues(alpha: 0.2),
+                            color: isSelected ? accent : tones.line,
                           ),
                         ),
                         child: Center(
                           child: Text(
                             _tabLabels[i],
                             style: textTheme.labelMedium?.copyWith(
-                              color: isSelected ? Colors.white : AppColors.ink,
+                              color: isSelected
+                                  ? context.onPlannerAccent
+                                  : tones.ink,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -1142,57 +1287,64 @@ class _RepeatRuleSheetState extends State<_RepeatRuleSheet> {
                 Container(
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: tones.surfaceRaised,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppColors.line),
+                    border: Border.all(color: tones.line),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // ── REPEAT EVERY ──
-                      Text(
-                        'REPEAT EVERY',
-                        style: textTheme.labelSmall?.copyWith(
-                          color: AppColors.mutedInk, letterSpacing: 1,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Text(_repeatEveryLabel, style: textTheme.bodyLarge),
-                          const Spacer(),
-                          _CountStepper(
-                            value: _repeatEvery,
-                            min: 1,
-                            max: 99,
-                            accentColor: accent,
-                            onChanged: (v) => setState(() => _repeatEvery = v),
-                          ),
-                        ],
-                      ),
-                      // ── REPEAT ON (weekly/biweekly) ──
-                      if (_selected == PlannerRepeatRule.weekly ||
-                          _selected == PlannerRepeatRule.biweekly) ...[
-                        const SizedBox(height: 14),
-                        const Divider(height: 1),
-                        const SizedBox(height: 14),
+                      if (_showEveryStepper) ...[
                         Text(
-                          'REPEAT ON',
+                          'REPEAT EVERY',
                           style: textTheme.labelSmall?.copyWith(
-                            color: AppColors.mutedInk, letterSpacing: 1,
+                            color: tones.mutedInk, letterSpacing: 1,
                           ),
                         ),
                         const SizedBox(height: 10),
-                        _WeekdaySelector(accentColor: accent),
+                        Row(
+                          children: [
+                            Text(_repeatEveryLabel, style: textTheme.bodyLarge),
+                            const Spacer(),
+                            _CountStepper(
+                              value: _repeatEvery,
+                              min: 1,
+                              max: 99,
+                              accentColor: accent,
+                              onChanged: (v) => setState(() => _repeatEvery = v),
+                            ),
+                          ],
+                        ),
+                      ],
+                      // ── REPEAT ON (weekly/biweekly) ──
+                      if (_isWeekly) ...[
+                        if (_showEveryStepper) ...[
+                          const SizedBox(height: 14),
+                          Divider(height: 1, color: tones.line),
+                          const SizedBox(height: 14),
+                        ],
+                        Text(
+                          'REPEAT ON',
+                          style: textTheme.labelSmall?.copyWith(
+                            color: tones.mutedInk, letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _WeekdaySelector(
+                          accentColor: accent,
+                          selected: _weekdays,
+                          onChanged: (days) => setState(() => _weekdays = days),
+                        ),
                       ],
                       const SizedBox(height: 14),
-                      const Divider(height: 1),
+                      Divider(height: 1, color: tones.line),
                       const SizedBox(height: 14),
                       // ── ENDS ──
                       Text(
                         'ENDS',
                         style: textTheme.labelSmall?.copyWith(
-                          color: AppColors.mutedInk, letterSpacing: 1,
+                          color: tones.mutedInk, letterSpacing: 1,
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -1566,46 +1718,73 @@ class _WheelItem extends StatelessWidget {
   }
 }
 
-class _WeekdaySelector extends StatefulWidget {
-  const _WeekdaySelector({required this.accentColor});
+/// Controlled weekday picker. Emits the set of selected DateTime weekdays
+/// (DateTime.monday..DateTime.sunday, i.e. 1..7). At least one day stays on.
+class _WeekdaySelector extends StatelessWidget {
+  const _WeekdaySelector({
+    required this.accentColor,
+    required this.selected,
+    required this.onChanged,
+  });
+
   final Color accentColor;
+  final Set<int> selected;
+  final ValueChanged<Set<int>> onChanged;
 
-  @override
-  State<_WeekdaySelector> createState() => _WeekdaySelectorState();
-}
-
-class _WeekdaySelectorState extends State<_WeekdaySelector> {
-  final Set<int> _selected = {};
+  // Display order Sun..Sat, mapped to DateTime weekday numbers.
   static const _labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  static const _weekdays = [
+    DateTime.sunday,
+    DateTime.monday,
+    DateTime.tuesday,
+    DateTime.wednesday,
+    DateTime.thursday,
+    DateTime.friday,
+    DateTime.saturday,
+  ];
 
   @override
   Widget build(BuildContext context) {
+    final tones = context.plannerTones;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: List.generate(7, (i) {
-        final isOn = _selected.contains(i);
-        return GestureDetector(
-          onTap: () => setState(() {
-            if (isOn) { _selected.remove(i); } else { _selected.add(i); }
-          }),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            width: 36, height: 36,
-            decoration: BoxDecoration(
-              color: isOn ? widget.accentColor : Colors.transparent,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isOn
-                    ? widget.accentColor
-                    : AppColors.mutedInk.withValues(alpha: 0.25),
+        final weekday = _weekdays[i];
+        final isOn = selected.contains(weekday);
+        return Semantics(
+          button: true,
+          selected: isOn,
+          label: const [
+            'Sunday', 'Monday', 'Tuesday', 'Wednesday',
+            'Thursday', 'Friday', 'Saturday',
+          ][i],
+          child: GestureDetector(
+            onTap: () {
+              final next = {...selected};
+              if (isOn) {
+                if (next.length > 1) next.remove(weekday);
+              } else {
+                next.add(weekday);
+              }
+              onChanged(next);
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: 40, height: 40,
+              decoration: BoxDecoration(
+                color: isOn ? accentColor : Colors.transparent,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isOn ? accentColor : tones.line,
+                ),
               ),
-            ),
-            child: Center(
-              child: Text(
-                _labels[i],
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: isOn ? Colors.white : AppColors.ink,
-                  fontWeight: FontWeight.w700,
+              child: Center(
+                child: Text(
+                  _labels[i],
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: isOn ? context.onPlannerAccent : tones.ink,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),

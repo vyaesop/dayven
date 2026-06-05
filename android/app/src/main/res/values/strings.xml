@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Vertical Planner</string>
+    <string name="app_name">Dayven</string>
     <string name="default_notification_channel_id">planner_reminders</string>
     <string name="default_notification_channel_name">Planner Reminders</string>
 </resources>
