@@ -38,29 +38,57 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const selected = parseDateOnly(req.query.date as string | undefined);
     const monthStart = new Date(Date.UTC(selected.getUTCFullYear(), selected.getUTCMonth(), 1));
-    const monthEnd   = new Date(Date.UTC(selected.getUTCFullYear(), selected.getUTCMonth() + 1, 1));
 
-    const [calendars, events] = await Promise.all([
-      sql`
-        SELECT id, name, color, position
-        FROM calendars
-        WHERE user_id = ${uid}
-        ORDER BY position, name
-      `,
-      sql`
-        SELECT id, title, is_all_day, start_at, end_at, location, url, note,
-               reminder, repeat_rule, attendees, calendar_id
-        FROM events
-        WHERE user_id = ${uid}
-          AND start_at >= ${monthStart.toISOString()}
-          AND start_at <  ${monthEnd.toISOString()}
-        ORDER BY start_at
-      `,
-    ]);
+    // Optional delta sync: when the client passes a `since` watermark we return
+    // only rows changed after it — including tombstoned rows so deletions made
+    // on other devices propagate. Without `since` we return the full live set
+    // (tombstones excluded). The client loads once and then expands recurring
+    // series + navigates months entirely in memory, so a month-bounded query
+    // would hide events in other months; personal calendars are small enough
+    // that returning the full set is fine.
+    const sinceRaw = req.query.since as string | undefined;
+    const since = sinceRaw ? new Date(sinceRaw) : null;
+    if (since && Number.isNaN(since.getTime())) {
+      return res.status(400).json({ error: 'Invalid since parameter' });
+    }
+    const serverTime = new Date().toISOString();
+
+    const [calendars, events] = since
+      ? await Promise.all([
+          sql`
+            SELECT id, name, color, position, deleted_at
+            FROM calendars
+            WHERE user_id = ${uid} AND updated_at > ${since.toISOString()}
+            ORDER BY position, name
+          `,
+          sql`
+            SELECT id, title, is_all_day, start_at, end_at, location, url, note,
+                   reminder, repeat_rule, attendees, calendar_id, updated_at, deleted_at
+            FROM events
+            WHERE user_id = ${uid} AND updated_at > ${since.toISOString()}
+            ORDER BY start_at
+          `,
+        ])
+      : await Promise.all([
+          sql`
+            SELECT id, name, color, position
+            FROM calendars
+            WHERE user_id = ${uid} AND deleted_at IS NULL
+            ORDER BY position, name
+          `,
+          sql`
+            SELECT id, title, is_all_day, start_at, end_at, location, url, note,
+                   reminder, repeat_rule, attendees, calendar_id, updated_at
+            FROM events
+            WHERE user_id = ${uid} AND deleted_at IS NULL
+            ORDER BY start_at
+          `,
+        ]);
 
     return res.status(200).json({
       selected_date: selected.toISOString(),
       focused_month: monthStart.toISOString(),
+      server_time: serverTime,
       calendars,
       events,
     });

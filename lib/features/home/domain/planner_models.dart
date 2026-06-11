@@ -351,10 +351,19 @@ class PlannerRecurrence {
   /// [anchorDate] (the series' first day) and stopping at [rangeEnd]
   /// (inclusive) or when the end condition is reached. Exceptions are skipped
   /// in the output but still count toward an "after N times" limit.
+  ///
+  /// [rangeStart] is an optional lower bound: for open-ended rules (no "after N
+  /// times" limit) iteration fast-forwards to near [rangeStart] so a very old
+  /// anchor (e.g. a daily event created years ago) doesn't exhaust the safety
+  /// cap before reaching the requested window. It never affects which dates are
+  /// produced — only how far ahead iteration begins. "After N times" rules are
+  /// not fast-forwarded because every occurrence must be counted from the
+  /// anchor (and such rules are already bounded by [count]).
   Iterable<DateTime> occurrenceDates(
     DateTime anchorDate,
-    DateTime rangeEnd,
-  ) sync* {
+    DateTime rangeEnd, {
+    DateTime? rangeStart,
+  }) sync* {
     if (!repeats) {
       if (!anchorDate.isAfter(rangeEnd)) yield anchorDate;
       return;
@@ -365,6 +374,15 @@ class PlannerRecurrence {
     var produced = 0;
     const safetyCap = 4000;
 
+    // Fast-forwarding is only safe when we don't need to count occurrences from
+    // the anchor. We deliberately under-skip (truncating division) so we never
+    // jump past a real occurrence — at worst a few extra iterations run.
+    final canSkip = endMode != RecurrenceEndMode.afterCount;
+    final lowerBound = (rangeStart != null &&
+            rangeStart.isAfter(anchor))
+        ? DateTime(rangeStart.year, rangeStart.month, rangeStart.day)
+        : null;
+
     bool limitReached() => endMode == RecurrenceEndMode.afterCount && produced >= count;
 
     switch (frequency) {
@@ -372,6 +390,10 @@ class PlannerRecurrence {
         return;
       case PlannerRepeatRule.daily:
         var d = anchor;
+        if (canSkip && lowerBound != null) {
+          final steps = lowerBound.difference(anchor).inDays ~/ interval;
+          if (steps > 0) d = anchor.add(Duration(days: steps * interval));
+        }
         for (var i = 0; i < safetyCap; i++) {
           if (limitReached()) return;
           if (hardEnd != null && d.isAfter(hardEnd)) return;
@@ -390,6 +412,13 @@ class PlannerRecurrence {
             : interval;
         var weekStart =
             anchor.subtract(Duration(days: anchor.weekday - DateTime.monday));
+        if (canSkip && lowerBound != null) {
+          final cycles =
+              (lowerBound.difference(weekStart).inDays ~/ 7) ~/ weekStep;
+          if (cycles > 0) {
+            weekStart = weekStart.add(Duration(days: 7 * weekStep * cycles));
+          }
+        }
         for (var i = 0; i < safetyCap; i++) {
           for (final wd in weekdays) {
             final d = weekStart.add(Duration(days: wd - DateTime.monday));
@@ -406,6 +435,16 @@ class PlannerRecurrence {
         var year = anchor.year;
         var month = anchor.month;
         final dom = anchor.day;
+        if (canSkip && lowerBound != null) {
+          final monthsDiff =
+              (lowerBound.year - anchor.year) * 12 + (lowerBound.month - anchor.month);
+          final cycles = monthsDiff ~/ interval;
+          if (cycles > 0) {
+            final base = (anchor.month - 1) + interval * cycles;
+            year = anchor.year + base ~/ 12;
+            month = base % 12 + 1;
+          }
+        }
         for (var i = 0; i < safetyCap; i++) {
           final dim = DateUtils.getDaysInMonth(year, month);
           final d = DateTime(year, month, dom.clamp(1, dim));
@@ -424,6 +463,10 @@ class PlannerRecurrence {
         var year = anchor.year;
         final month = anchor.month;
         final dom = anchor.day;
+        if (canSkip && lowerBound != null && lowerBound.year > anchor.year) {
+          final cycles = (lowerBound.year - anchor.year) ~/ interval;
+          if (cycles > 0) year = anchor.year + interval * cycles;
+        }
         for (var i = 0; i < safetyCap; i++) {
           final dim = DateUtils.getDaysInMonth(year, month);
           final d = DateTime(year, month, dom.clamp(1, dim));
@@ -462,6 +505,38 @@ class PlannerCalendar {
   final String id;
   final String name;
   final Color color;
+
+  /// Encode the colour as an uppercase `#RRGGBB` hex string for storage.
+  static String colorToHex(Color color) {
+    String channel(double c) =>
+        (c * 255).round().clamp(0, 255).toRadixString(16).padLeft(2, '0');
+    return '#${channel(color.r)}${channel(color.g)}${channel(color.b)}'
+        .toUpperCase();
+  }
+
+  /// Parse a `#RRGGBB`/`RRGGBB` hex string, falling back to a neutral grey.
+  static Color colorFromHex(String? hex) {
+    final raw = (hex ?? '').replaceAll('#', '').trim();
+    if (raw.length == 6) {
+      final value = int.tryParse(raw, radix: 16);
+      if (value != null) return Color(0xFF000000 | value);
+    }
+    return const Color(0xFF74706B);
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'color': colorToHex(color),
+      };
+
+  factory PlannerCalendar.fromJson(Map<String, dynamic> json) {
+    return PlannerCalendar(
+      id: json['id'] as String,
+      name: json['name'] as String? ?? 'Calendar',
+      color: colorFromHex(json['color'] as String?),
+    );
+  }
 }
 
 class PlannerEvent {
@@ -481,6 +556,7 @@ class PlannerEvent {
     this.recurrence = PlannerRecurrence.none,
     this.seriesId,
     this.occurrenceDate,
+    this.updatedAt,
   });
 
   final String id;
@@ -495,6 +571,11 @@ class PlannerEvent {
   final PlannerReminder reminder;
   final PlannerRepeatRule repeatRule;
   final List<String> attendees;
+
+  /// Last time this event was modified (UTC). Drives last-write-wins conflict
+  /// resolution when reconciling the local cache with the cloud backend. Null
+  /// for legacy/demo data; treated as the epoch (always loses) during merge.
+  final DateTime? updatedAt;
 
   /// Full recurrence spec. When [PlannerRecurrence.isNone] the event falls back
   /// to a simple rule derived from [repeatRule] (covers legacy/demo data that
@@ -552,6 +633,7 @@ class PlannerEvent {
     PlannerRecurrence? recurrence,
     String? seriesId,
     DateTime? occurrenceDate,
+    DateTime? updatedAt,
   }) {
     return PlannerEvent(
       id: id ?? this.id,
@@ -569,8 +651,13 @@ class PlannerEvent {
       recurrence: recurrence ?? this.recurrence,
       seriesId: seriesId ?? this.seriesId,
       occurrenceDate: occurrenceDate ?? this.occurrenceDate,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
+
+  /// Effective modification time for conflict resolution; never null.
+  DateTime get sortableUpdatedAt =>
+      updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
 
   String get timeRange {
     final formatter = DateFormat('h:mm a');
@@ -594,6 +681,7 @@ class PlannerEvent {
       'reminder': reminder.storageValue,
       'repeat_rule': effectiveRecurrence.encode(),
       'attendees': attendees,
+      'updated_at': (updatedAt ?? DateTime.now()).toUtc().toIso8601String(),
     };
   }
 
@@ -613,8 +701,16 @@ class PlannerEvent {
       repeatRule: recurrence.frequency,
       recurrence: recurrence,
       attendees: _attendeesFromJson(json['attendees']),
+      updatedAt: _parseUpdatedAt(json['updated_at']),
     );
   }
+}
+
+DateTime? _parseUpdatedAt(Object? value) {
+  if (value is String && value.isNotEmpty) {
+    return DateTime.tryParse(value)?.toUtc();
+  }
+  return null;
 }
 
 class PlannerEventDraft {
@@ -808,15 +904,25 @@ class PlannerState {
     for (final event in filteredEvents) {
       final recurrence = event.effectiveRecurrence;
       if (!recurrence.repeats) {
-        final day = _startOfDay(event.startAt);
-        if (!day.isBefore(rangeStart) && !day.isAfter(rangeEnd)) {
+        final startDay = _startOfDay(event.startAt);
+        var endDay = _startOfDay(event.endAt);
+        // An end exactly at midnight finishes on the day boundary, so the
+        // previous day is the last covered day (all-day events store their end
+        // as the next day's midnight). This keeps single all-day events on one
+        // day while letting genuinely multi-day / cross-midnight events span.
+        if (event.endAt == endDay && endDay.isAfter(startDay)) {
+          endDay = endDay.subtract(const Duration(days: 1));
+        }
+        // Include the event when its [startDay, endDay] span intersects range.
+        if (!startDay.isAfter(rangeEnd) && !endDay.isBefore(rangeStart)) {
           result.add(event);
         }
         continue;
       }
 
       final anchor = _startOfDay(event.startAt);
-      for (final date in recurrence.occurrenceDates(anchor, rangeEnd)) {
+      for (final date
+          in recurrence.occurrenceDates(anchor, rangeEnd, rangeStart: rangeStart)) {
         if (date.isBefore(rangeStart)) continue;
         result.add(event.instanceOn(date));
       }
@@ -844,6 +950,15 @@ class PlannerState {
       }
     }
 
+    // Fall back to the first calendar, or a neutral placeholder when there are
+    // none (avoids a `.first` StateError if calendars haven't loaded yet).
+    if (calendars.isEmpty) {
+      return const PlannerCalendar(
+        id: 'calendar',
+        name: 'Calendar',
+        color: Color(0xFF74706B),
+      );
+    }
     return calendars.first;
   }
 

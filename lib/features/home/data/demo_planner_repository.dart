@@ -177,4 +177,19 @@ class DemoPlannerRepository implements PlannerRepository {
   Future<void> deleteEvent(String eventId) async {
     _events.removeWhere((event) => event.id == eventId);
   }
+
+  @override
+  Future<bool> saveHolidays(
+    PlannerCalendar calendar,
+    List<PlannerEvent> events,
+  ) async {
+    if (!_calendars.any((c) => c.id == calendar.id)) {
+      _calendars.add(calendar);
+    }
+    final existingIds = _events.map((e) => e.id).toSet();
+    _events.addAll(events.where((e) => !existingIds.contains(e.id)));
+    // In-memory only — not durable across restarts, so the caller should keep
+    // re-fetching on each launch.
+    return false;
+  }
 }

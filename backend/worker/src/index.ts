@@ -87,9 +87,6 @@ async function handleGetPlanner(
   const monthStart = new Date(
     Date.UTC(selectedDate.getUTCFullYear(), selectedDate.getUTCMonth(), 1),
   );
-  const monthEnd = new Date(
-    Date.UTC(selectedDate.getUTCFullYear(), selectedDate.getUTCMonth() + 1, 1),
-  );
 
   const calendars = (await sql`
     select id, name, color, position
@@ -97,11 +94,12 @@ async function handleGetPlanner(
     order by position asc, name asc
   `) as CalendarRow[];
 
+  // Return the full event set: the client expands recurrence + navigates months
+  // in memory, so a month-bounded query would hide other months and series
+  // anchored elsewhere.
   const events = (await sql`
     select id, title, is_all_day, start_at, end_at, location, url, note, reminder, repeat_rule, attendees, calendar_id
     from events
-    where start_at >= ${monthStart.toISOString()}
-      and start_at < ${monthEnd.toISOString()}
     order by start_at asc
   `) as EventRow[];
 
@@ -232,14 +230,18 @@ function startOfUtcDay(date: Date): Date {
 }
 
 function authorize(request: Request, env: Env): void {
+  // NOTE: This Worker is a legacy, single-tenant backend. The canonical backend
+  // is the Firebase-authenticated, per-user Vercel API under /api. This Worker
+  // does not scope data per user, so it must never run unauthenticated: if no
+  // shared token is configured we fail closed rather than exposing all data.
   const expectedToken = env.API_BEARER_TOKEN?.trim();
   if (!expectedToken) {
-    return;
+    throw new HttpError(503, "Backend not configured: API_BEARER_TOKEN is required");
   }
 
   const authHeader = request.headers.get("authorization") ?? "";
   const providedToken = authHeader.replace(/^Bearer\s+/i, "").trim();
-  if (providedToken != expectedToken) {
+  if (providedToken !== expectedToken) {
     throw new HttpError(401, "Unauthorized");
   }
 }

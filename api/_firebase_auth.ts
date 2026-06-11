@@ -57,7 +57,13 @@ export async function verifyFirebaseToken(idToken: string): Promise<FirebaseUser
 
   const key = await getPublicKey(header.kid);
   const data = new TextEncoder().encode(`${hB64}.${pB64}`);
-  const valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, b64url(sigB64), data);
+  const signature = b64url(sigB64);
+  const valid = await crypto.subtle.verify(
+    'RSASSA-PKCS1-v1_5',
+    key,
+    signature as BufferSource,
+    data as BufferSource,
+  );
   if (!valid) throw new Error('Invalid signature');
 
   return { uid: payload.sub, email: payload.email ?? '' };
