@@ -4,7 +4,7 @@ import '../../../app/theme/app_theme.dart';
 import '../domain/planner_models.dart';
 
 /// Which occurrences an edit/delete applies to for a recurring series.
-enum EventEditScope { thisEvent, allEvents }
+enum EventEditScope { thisEvent, thisAndFollowing, allEvents }
 
 Future<void> showEventEditorSheet({
   required BuildContext context,
@@ -16,6 +16,9 @@ Future<void> showEventEditorSheet({
   Future<void> Function(String eventId)? onDelete,
   Future<void> Function(PlannerEvent template)? onEditSeriesAll,
   Future<void> Function(String seriesId, DateTime date)? onExcludeOccurrence,
+  Future<void> Function(PlannerEvent template, DateTime fromDate)?
+      onEditSeriesFollowing,
+  Future<void> Function(String seriesId, DateTime fromDate)? onTruncateSeries,
   PlannerEvent? initialEvent,
 }) {
   return showModalBottomSheet<void>(
@@ -31,6 +34,8 @@ Future<void> showEventEditorSheet({
       onDelete: onDelete,
       onEditSeriesAll: onEditSeriesAll,
       onExcludeOccurrence: onExcludeOccurrence,
+      onEditSeriesFollowing: onEditSeriesFollowing,
+      onTruncateSeries: onTruncateSeries,
       initialEvent: initialEvent,
     ),
   );
@@ -46,6 +51,8 @@ class _EventEditorSheet extends StatefulWidget {
     this.onDelete,
     this.onEditSeriesAll,
     this.onExcludeOccurrence,
+    this.onEditSeriesFollowing,
+    this.onTruncateSeries,
     this.initialEvent,
   });
 
@@ -58,6 +65,10 @@ class _EventEditorSheet extends StatefulWidget {
   final Future<void> Function(PlannerEvent template)? onEditSeriesAll;
   final Future<void> Function(String seriesId, DateTime date)?
       onExcludeOccurrence;
+  final Future<void> Function(PlannerEvent template, DateTime fromDate)?
+      onEditSeriesFollowing;
+  final Future<void> Function(String seriesId, DateTime fromDate)?
+      onTruncateSeries;
   final PlannerEvent? initialEvent;
 
   @override
@@ -107,25 +118,22 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
             initialEvent.startAt.day,
           );
     _isAllDay = initialEvent?.isAllDay ?? false;
-    final startDateTime =
-        initialEvent?.startAt ??
-        DateTime(
-          _selectedDate.year,
-          _selectedDate.month,
-          _selectedDate.day,
-          9,
-          0,
-        );
-    _startTime = TimeOfDay.fromDateTime(startDateTime);
+    // For a brand-new event added to today, default to the next half-hour slot
+    // so the common "add something soon" case needs no time edit. Other days
+    // default to a sensible 9:00 morning slot. Events are one hour by default.
+    final now = DateTime.now();
+    final creatingForToday = initialEvent == null &&
+        _selectedDate.year == now.year &&
+        _selectedDate.month == now.month &&
+        _selectedDate.day == now.day;
+    final defaultStart = initialEvent?.startAt ??
+        (creatingForToday
+            ? _ceilToHalfHour(now)
+            : DateTime(_selectedDate.year, _selectedDate.month,
+                _selectedDate.day, 9, 0));
+    _startTime = TimeOfDay.fromDateTime(defaultStart);
     _endTime = TimeOfDay.fromDateTime(
-      initialEvent?.endAt ??
-          DateTime(
-            _selectedDate.year,
-            _selectedDate.month,
-            _selectedDate.day,
-            10,
-            0,
-          ),
+      initialEvent?.endAt ?? defaultStart.add(const Duration(hours: 1)),
     );
     _calendarId =
         initialEvent?.calendarId ??
@@ -133,6 +141,15 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
         widget.calendars.first.id;
     _reminder = initialEvent?.reminder ?? PlannerReminder.none;
     _recurrence = initialEvent?.effectiveRecurrence ?? PlannerRecurrence.none;
+  }
+
+  /// Rounds [time] up to the next half-hour boundary (e.g. 14:05 -> 14:30,
+  /// 14:30 -> 15:00), dropping sub-minute precision.
+  static DateTime _ceilToHalfHour(DateTime time) {
+    final base = DateTime(time.year, time.month, time.day, time.hour);
+    if (time.minute == 0) return base;
+    if (time.minute <= 30) return base.add(const Duration(minutes: 30));
+    return base.add(const Duration(hours: 1));
   }
 
   @override
@@ -219,7 +236,12 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
                     label: 'Title',
                     child: TextField(
                       controller: _titleController,
+                      // Open with the keyboard up on the title for new events so
+                      // the user can type and save in the fewest taps.
+                      autofocus: !_isEditing,
                       textCapitalization: TextCapitalization.sentences,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _isSaving ? null : _handleSave(),
                       decoration: const InputDecoration(
                         hintText: 'Event title',
                       ),
@@ -453,7 +475,7 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
             _startTime.hour,
             _startTime.minute,
           );
-    final endAt = _isAllDay
+    var endAt = _isAllDay
         ? DateTime(
             _selectedDate.year,
             _selectedDate.month,
@@ -467,9 +489,18 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
             _endTime.minute,
           );
 
-    if (!_isAllDay && !endAt.isAfter(startAt)) {
-      _showMessage('End time must be after start time.');
-      return;
+    if (!_isAllDay) {
+      final sameTime = _endTime.hour == _startTime.hour &&
+          _endTime.minute == _startTime.minute;
+      if (sameTime) {
+        _showMessage('End time must be different from the start time.');
+        return;
+      }
+      // An end time at or before the start is interpreted as crossing midnight
+      // into the next day (e.g. 23:00 → 01:00) rather than being rejected.
+      if (!endAt.isAfter(startAt)) {
+        endAt = endAt.add(const Duration(days: 1));
+      }
     }
 
     final original = widget.initialEvent;
@@ -550,6 +581,30 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
             attendees: attendees,
           ),
         );
+      } else if (scope == EventEditScope.thisAndFollowing) {
+        // Split the series at this occurrence: end the original before this
+        // date and start a new series here with the edited values.
+        final seriesId = original.seriesId ?? original.id;
+        final fromDate = original.occurrenceDate ??
+            DateTime(startAt.year, startAt.month, startAt.day);
+        await widget.onEditSeriesFollowing?.call(
+          original.copyWith(
+            id: seriesId,
+            title: title,
+            isAllDay: _isAllDay,
+            startAt: startAt,
+            endAt: endAt,
+            location: location,
+            url: url,
+            note: note,
+            calendarId: _calendarId,
+            reminder: _reminder,
+            repeatRule: _recurrence.frequency,
+            recurrence: _recurrence,
+            attendees: attendees,
+          ),
+          fromDate,
+        );
       } else {
         // "This event only": detach the occurrence from the series and store a
         // standalone, non-repeating override.
@@ -613,6 +668,15 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
         await widget.onDelete?.call(original.id);
       } else if (scope == EventEditScope.allEvents) {
         await widget.onDelete?.call(original.seriesId ?? original.id);
+      } else if (scope == EventEditScope.thisAndFollowing) {
+        final seriesId = original.seriesId ?? original.id;
+        final fromDate = original.occurrenceDate ??
+            DateTime(
+              original.startAt.year,
+              original.startAt.month,
+              original.startAt.day,
+            );
+        await widget.onTruncateSeries?.call(seriesId, fromDate);
       } else {
         final seriesId = original.seriesId ?? original.id;
         final occurrenceDate = original.occurrenceDate ??
@@ -765,6 +829,13 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
                     label: '$verb this event only',
                     onTap: () =>
                         Navigator.of(ctx).pop(EventEditScope.thisEvent),
+                    textTheme: textTheme,
+                  ),
+                  Divider(height: 1, indent: 16, endIndent: 16, color: tones.line),
+                  _EditRepeatOption(
+                    label: '$verb this and following events',
+                    onTap: () =>
+                        Navigator.of(ctx).pop(EventEditScope.thisAndFollowing),
                     textTheme: textTheme,
                   ),
                   Divider(height: 1, indent: 16, endIndent: 16, color: tones.line),

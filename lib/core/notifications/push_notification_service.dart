@@ -63,6 +63,11 @@ class PushNotificationService {
 
   bool _initialized = false;
   bool _timezoneReady = false;
+  // Whether the OS currently lets us schedule exact alarms. On Android 13+ this
+  // is auto-granted via USE_EXACT_ALARM; on Android 12 (API 31-32) the user can
+  // revoke it, so we detect it and fall back to inexact scheduling rather than
+  // throwing (a slightly-late reminder beats no reminder).
+  bool _exactAlarmsAllowed = true;
 
   Future<void> initialize() async {
     if (_initialized || kIsWeb) {
@@ -157,11 +162,22 @@ class PushNotificationService {
       importance: Importance.high,
     );
 
-    await _localNotifications
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.createNotificationChannel(androidChannel);
+    final android = _localNotifications.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    await android?.createNotificationChannel(androidChannel);
+
+    // Resolve whether exact alarms are permitted, requesting the permission on
+    // Android 12 where it is user-grantable. Cache the result so scheduling can
+    // gracefully degrade to inexact mode instead of throwing.
+    try {
+      var allowed = await android?.canScheduleExactNotifications() ?? true;
+      if (!allowed) {
+        allowed = await android?.requestExactAlarmsPermission() ?? false;
+      }
+      _exactAlarmsAllowed = allowed;
+    } catch (_) {
+      _exactAlarmsAllowed = true;
+    }
   }
 
   Future<void> _initializeTimezone() async {
@@ -193,20 +209,20 @@ class PushNotificationService {
       return;
     }
 
-    final lead = _leadDurationFor(event.reminder);
-    if (lead == null) {
-      return;
-    }
-
-    final now = DateTime.now();
-    final occurrenceStart = _nextReminderStart(event, lead, now);
-    if (occurrenceStart == null) {
+    final fireAt = reminderFireTime(event, DateTime.now());
+    if (fireAt == null) {
       // No upcoming occurrence whose reminder is still in the future.
       return;
     }
-    final fireAt = occurrenceStart.subtract(lead);
 
     final scheduled = tz.TZDateTime.from(fireAt, tz.local);
+
+    // For simple, open-ended recurrences we let Android repeat the notification
+    // natively so subsequent occurrences still fire even if the app is never
+    // reopened. Rules that can't be expressed as a single repeating component
+    // (intervals > 1, biweekly, monthly/yearly, multiple weekdays, or a count/
+    // until limit) fall back to a one-shot that is re-armed on the next launch.
+    final matchComponent = _repeatComponentFor(event);
 
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
@@ -226,7 +242,10 @@ class PushNotificationService {
         body: _reminderBody(event),
         scheduledDate: scheduled,
         notificationDetails: details,
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        androidScheduleMode: _exactAlarmsAllowed
+            ? AndroidScheduleMode.exactAllowWhileIdle
+            : AndroidScheduleMode.inexactAllowWhileIdle,
+        matchDateTimeComponents: matchComponent,
         payload: 'event:${event.id}',
       );
       if (kDebugMode) {
@@ -272,20 +291,60 @@ class PushNotificationService {
   }
 
   int _eventNotificationId(String eventId) {
-    // Stable positive int derived from event id; reserve a high range to
-    // avoid clashing with foreground FCM message hashCodes used by show().
-    final hash = eventId.hashCode;
+    // Deterministic positive int derived from the event id. We use FNV-1a rather
+    // than String.hashCode because hashCode is not guaranteed stable across app
+    // restarts/builds — and the OS-scheduled notification id must match on a
+    // later launch for cancel/reschedule to work. The high bit is reserved to
+    // keep these out of the range used by foreground FCM show() ids.
+    var hash = 0x811c9dc5;
+    for (final unit in eventId.codeUnits) {
+      hash ^= unit;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
     return 0x40000000 | (hash & 0x3FFFFFFF);
   }
 
+  /// All-day events have no clock time, so anchor their reminders at this local
+  /// hour on the event day — otherwise "at time" would fire at midnight.
+  static const int allDayReminderHour = 9;
+
+  /// Pure, testable computation of when [event]'s reminder should fire, in local
+  /// wall-clock time, or null when there is no upcoming reminder.
+  ///
+  /// Occurrences are built with wall-clock construction (`DateTime(y, m, d, h,
+  /// min)`), so a recurring event keeps the same local time across DST
+  /// transitions (a 9:00 daily event stays 9:00, not 8:00/10:00). The absolute
+  /// instant is resolved for the device's current zone by the caller via
+  /// `tz.TZDateTime.from`.
+  @visibleForTesting
+  static DateTime? reminderFireTime(PlannerEvent event, DateTime now) {
+    final lead = _leadDurationFor(event.reminder);
+    if (lead == null) return null;
+    final start = _nextReminderStart(event, lead, now);
+    if (start == null) return null;
+    return start.subtract(lead);
+  }
+
+  /// The wall-clock start used for reminders on a given [date]. Timed events use
+  /// their own hour/minute; all-day events anchor at [allDayReminderHour].
+  static DateTime _reminderStartOnDate(PlannerEvent event, DateTime date) {
+    if (event.isAllDay) {
+      return DateTime(date.year, date.month, date.day, allDayReminderHour);
+    }
+    return DateTime(date.year, date.month, date.day, event.startAt.hour,
+        event.startAt.minute);
+  }
+
   /// The start time of the next occurrence whose reminder fire time is still in
-  /// the future. For non-repeating events this is simply the event start (if its
+  /// the future. For non-repeating events this is the event start (if its
   /// reminder hasn't passed). For recurring events we walk forward through the
   /// series to find the next occurrence to remind about.
-  DateTime? _nextReminderStart(PlannerEvent event, Duration lead, DateTime now) {
+  static DateTime? _nextReminderStart(
+      PlannerEvent event, Duration lead, DateTime now) {
     final recurrence = event.effectiveRecurrence;
     if (!recurrence.repeats) {
-      return event.startAt.subtract(lead).isAfter(now) ? event.startAt : null;
+      final start = _reminderStartOnDate(event, event.startAt);
+      return start.subtract(lead).isAfter(now) ? start : null;
     }
 
     final anchor = DateTime(
@@ -293,18 +352,14 @@ class PushNotificationService {
       event.startAt.month,
       event.startAt.day,
     );
-    // Look ahead far enough to cover sparse rules (e.g. yearly).
+    // Look ahead far enough to cover sparse rules (e.g. yearly). Pass today as
+    // the lower bound so a long-running series (e.g. a years-old daily event)
+    // fast-forwards to upcoming occurrences instead of exhausting the cap.
     final horizon = DateTime(now.year + 2, now.month, now.day);
-    for (final date in recurrence.occurrenceDates(anchor, horizon)) {
-      final start = event.isAllDay
-          ? DateTime(date.year, date.month, date.day)
-          : DateTime(
-              date.year,
-              date.month,
-              date.day,
-              event.startAt.hour,
-              event.startAt.minute,
-            );
+    final today = DateTime(now.year, now.month, now.day);
+    for (final date
+        in recurrence.occurrenceDates(anchor, horizon, rangeStart: today)) {
+      final start = _reminderStartOnDate(event, date);
       if (start.subtract(lead).isAfter(now)) {
         return start;
       }
@@ -312,7 +367,36 @@ class PushNotificationService {
     return null;
   }
 
-  Duration? _leadDurationFor(PlannerReminder reminder) {
+  /// The native repeat component for an event's recurrence, or null when the
+  /// rule can't be represented by a single repeating notification (in which case
+  /// we schedule a one-shot and rely on re-arming at the next app launch).
+  ///
+  /// We only map open-ended (no count/until) rules: a daily-every-1-day rule
+  /// repeats at the same time each day; a weekly-every-1-week rule on a single
+  /// weekday repeats on that weekday. The constant lead time is baked into the
+  /// scheduled fire time, so repeating on the fire instant stays correct.
+  DateTimeComponents? _repeatComponentFor(PlannerEvent event) {
+    final rec = event.effectiveRecurrence;
+    if (!rec.repeats || rec.endMode != RecurrenceEndMode.never) return null;
+    if (rec.interval != 1) return null;
+    switch (rec.frequency) {
+      case PlannerRepeatRule.daily:
+        return DateTimeComponents.time;
+      case PlannerRepeatRule.weekly:
+        // A single weekday (or the anchor's own weekday) maps cleanly; multiple
+        // weekdays would need several notifications, so fall back to one-shot.
+        return rec.byWeekdays.length <= 1
+            ? DateTimeComponents.dayOfWeekAndTime
+            : null;
+      case PlannerRepeatRule.biweekly:
+      case PlannerRepeatRule.monthly:
+      case PlannerRepeatRule.yearly:
+      case PlannerRepeatRule.never:
+        return null;
+    }
+  }
+
+  static Duration? _leadDurationFor(PlannerReminder reminder) {
     switch (reminder) {
       case PlannerReminder.none:
         return null;
