@@ -12,7 +12,7 @@ import '../../../core/network/http_api_client.dart';
 import '../../../core/notifications/push_notification_service.dart';
 import '../../../core/storage/local_cache_store.dart';
 import '../../../core/storage/mutation_queue.dart';
-import '../data/demo_planner_repository.dart';
+import '../data/local_planner_repository.dart';
 import '../data/neon_planner_api.dart';
 import '../data/offline_first_planner_repository.dart';
 import '../data/planner_repository.dart';
@@ -46,7 +46,7 @@ final plannerRepositoryProvider = Provider<PlannerRepository>((ref) {
     );
   }
 
-  return DemoPlannerRepository();
+  return LocalPlannerRepository();
 });
 
 final plannerControllerProvider =
@@ -60,22 +60,50 @@ class PlannerController extends AsyncNotifier<PlannerState> {
   PushNotificationService get _notifications =>
       PushNotificationService.instance;
 
+  /// Years whose holidays we've already requested this session (dedupe guard).
+  final Set<int> _holidayYearsRequested = {};
+
   @override
   Future<PlannerState> build() async {
     final initial = await _repository.loadInitialState();
     unawaited(_notifications.rescheduleAllEventReminders(initial.events));
-    // Auto-load public holidays in the background; don't block startup.
-    unawaited(_tryLoadHolidays(DateTime.now().year));
+    // Auto-load public holidays in the background; don't block startup. Holidays
+    // are per-year, so seed this year and next so they don't "run out" when the
+    // user looks ahead.
+    final thisYear = DateTime.now().year;
+    unawaited(_ensureHolidaysForYear(thisYear, calendars: initial.calendars));
+    unawaited(_ensureHolidaysForYear(thisYear + 1, calendars: initial.calendars));
     return initial;
   }
 
-  Future<void> _tryLoadHolidays(int year) async {
-    final current = state.asData?.value;
-    if (current == null) return;
-    final result = await HolidaysService.instance
-        .loadForYear(year, current.calendars);
-    if (result == null) return;
-    await _applyHolidayResult(result);
+  /// Ensures public holidays are loaded for [year] — for the device-locale
+  /// country and for any country the user has already loaded in the current
+  /// year. Safe to call repeatedly; it dedupes per session and per-year.
+  Future<void> _ensureHolidaysForYear(
+    int year, {
+    List<PlannerCalendar>? calendars,
+  }) async {
+    if (!_holidayYearsRequested.add(year)) return;
+    final cals = calendars ?? state.asData?.value.calendars;
+    if (cals == null) {
+      _holidayYearsRequested.remove(year);
+      return;
+    }
+
+    final service = HolidaysService.instance;
+    // Device-locale country (respects its own per-year "loaded" flag).
+    final auto = await service.loadForYear(year, cals);
+    if (auto != null) await _applyHolidayResult(auto);
+
+    // Extend any countries already loaded for the current year into [year], so
+    // a manually-added country (e.g. Ethiopia) keeps showing in later years.
+    final prior = await service.loadedCountriesForYear(DateTime.now().year);
+    final already = await service.loadedCountriesForYear(year);
+    for (final code in prior) {
+      if (already.contains(code)) continue;
+      final result = await service.loadForCountry(year, code, cals);
+      if (result != null) await _applyHolidayResult(result);
+    }
   }
 
   Future<void> _applyHolidayResult(HolidayLoadResult result) async {
@@ -124,14 +152,20 @@ class PlannerController extends AsyncNotifier<PlannerState> {
   Future<bool> loadHolidaysForCountry(String countryCode) async {
     final current = state.asData?.value;
     if (current == null) return false;
-    final result = await HolidaysService.instance.loadForCountry(
-      DateTime.now().year,
-      countryCode,
-      current.calendars,
-    );
-    if (result == null) return false;
-    await _applyHolidayResult(result);
-    return true;
+    // Load the current year plus every year already seeded this session, so a
+    // manually-added country shows for the years the user can already navigate
+    // to (later years are picked up on navigation).
+    final years = <int>{DateTime.now().year, ..._holidayYearsRequested};
+    var anyLoaded = false;
+    for (final year in years) {
+      final result = await HolidaysService.instance
+          .loadForCountry(year, countryCode, current.calendars);
+      if (result != null) {
+        await _applyHolidayResult(result);
+        anyLoaded = true;
+      }
+    }
+    return anyLoaded;
   }
 
   void selectDate(DateTime date) {
@@ -147,6 +181,11 @@ class PlannerController extends AsyncNotifier<PlannerState> {
         focusedMonth: DateTime(normalized.year, normalized.month),
       ),
     );
+
+    // Holidays are per-year; load the year being navigated to (and the next one)
+    // so they keep appearing as the user looks further ahead/back.
+    unawaited(_ensureHolidaysForYear(normalized.year));
+    unawaited(_ensureHolidaysForYear(normalized.year + 1));
   }
 
   void jumpToToday() {

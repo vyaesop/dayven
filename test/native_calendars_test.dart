@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vertical_planner/core/calendars/ethiopian_calendar.dart';
 import 'package:vertical_planner/core/calendars/native_calendars.dart';
+import 'package:vertical_planner/core/calendars/secondary_calendar.dart';
 
 void main() {
   group('Buddhist', () {
@@ -60,6 +62,35 @@ void main() {
         expect(h.day, inInclusiveRange(1, 30));
         date = date.add(const Duration(days: 1));
       }
+    });
+  });
+
+  // The secondary-calendar date label is computed live per date, so it must
+  // keep working for dates many years out (not "stop after a year").
+  group('secondary calendar labels are stable far into the future', () {
+    final farDates = [
+      DateTime(2030, 6, 15),
+      DateTime(2035, 11, 1),
+      DateTime(2045, 2, 28),
+    ];
+
+    for (final cal in SecondaryCalendar.values) {
+      if (cal == SecondaryCalendar.none) continue;
+      test('${cal.name} returns a non-empty label for far dates', () {
+        for (final d in farDates) {
+          final label = cal.labelFor(d);
+          expect(label, isNotNull);
+          expect(label, isNotEmpty);
+        }
+      });
+    }
+
+    test('Ethiopian advances year-over-year (every year, not just one)', () {
+      final y2030 = EthiopianDate.fromGregorian(DateTime(2030, 1, 15)).year;
+      final y2031 = EthiopianDate.fromGregorian(DateTime(2031, 1, 15)).year;
+      final y2040 = EthiopianDate.fromGregorian(DateTime(2040, 1, 15)).year;
+      expect(y2031, y2030 + 1);
+      expect(y2040, y2030 + 10);
     });
   });
 }
