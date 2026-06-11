@@ -3,10 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../app/theme/app_theme.dart';
-import '../../../core/storage/storage_mode.dart';
 import '../../../core/weather/weather_service.dart';
+import '../../../core/auth/firebase_auth_service.dart';
 import '../../account/application/local_account_controller.dart';
-import '../../bootstrap/application/app_bootstrap_controller.dart';
 import '../../menu/presentation/planner_feature_screens.dart';
 import '../../preferences/application/app_preferences_controller.dart';
 import '../application/planner_controller.dart';
@@ -44,37 +43,35 @@ class _HomeLoaded extends ConsumerStatefulWidget {
 }
 
 /// The three ways the day's schedule can be rendered.
-enum _TimelineLayout { traditional, hourly, multiLine }
+// v1 ships two timeline layouts: Cards (traditional) and Hourly. The legacy
+// "Multi-line" list view was dropped to keep one strong default + one
+// alternative; the persisted value 'Multi-line' falls back to Cards.
+enum _TimelineLayout { traditional, hourly }
 
 _TimelineLayout _layoutFromPref(String value) => switch (value) {
       'Day Hourly' => _TimelineLayout.hourly,
-      'Multi-line' => _TimelineLayout.multiLine,
       _ => _TimelineLayout.traditional,
     };
 
 String _layoutToPref(_TimelineLayout layout) => switch (layout) {
       _TimelineLayout.hourly => 'Day Hourly',
-      _TimelineLayout.multiLine => 'Multi-line',
       _TimelineLayout.traditional => 'Traditional',
     };
 
 extension _TimelineLayoutX on _TimelineLayout {
   _TimelineLayout get next => switch (this) {
         _TimelineLayout.traditional => _TimelineLayout.hourly,
-        _TimelineLayout.hourly => _TimelineLayout.multiLine,
-        _TimelineLayout.multiLine => _TimelineLayout.traditional,
+        _TimelineLayout.hourly => _TimelineLayout.traditional,
       };
 
   String get label => switch (this) {
         _TimelineLayout.traditional => 'Cards',
         _TimelineLayout.hourly => 'Hourly',
-        _TimelineLayout.multiLine => 'List',
       };
 
   IconData get icon => switch (this) {
         _TimelineLayout.traditional => Icons.view_agenda_rounded,
         _TimelineLayout.hourly => Icons.access_time_rounded,
-        _TimelineLayout.multiLine => Icons.format_list_bulleted_rounded,
       };
 }
 
@@ -162,7 +159,7 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                       ),
                       const Spacer(),
                       Text(
-                        'TODAY',
+                        'DAYVEN',
                         style: textTheme.labelLarge?.copyWith(
                           color: tones.mutedInk,
                         ),
@@ -218,6 +215,26 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                                   style: textTheme.labelLarge?.copyWith(
                                     color: tones.mutedInk,
                                   ),
+                                ),
+                                Builder(
+                                  builder: (context) {
+                                    final secondary = preferences
+                                        .secondaryCalendar
+                                        .labelFor(state.selectedDate);
+                                    if (secondary == null) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 3),
+                                      child: Text(
+                                        secondary,
+                                        style: textTheme.labelSmall?.copyWith(
+                                          color: tones.mutedInk,
+                                          letterSpacing: 0.2,
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 ),
                                 // Weather is only meaningful for today, so the
                                 // briefing is shown for the current day only
@@ -334,37 +351,6 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                                                       state,
                                                     ),
                                               ),
-                                            _TimelineLayout.multiLine =>
-                                              ListView.separated(
-                                                physics:
-                                                    const BouncingScrollPhysics(),
-                                                itemCount: dayEvents.length,
-                                                separatorBuilder: (_, _) =>
-                                                    Divider(
-                                                      height: 1,
-                                                      color: tones.line,
-                                                    ),
-                                                itemBuilder: (context, index) {
-                                                  final event =
-                                                      dayEvents[index];
-                                                  final calendar =
-                                                      state.calendarById(
-                                                    event.calendarId,
-                                                  );
-                                                  return _MultiLineRow(
-                                                    event: event,
-                                                    calendar: calendar,
-                                                    onTap: () =>
-                                                        _openEventDetailSheet(
-                                                          context,
-                                                          ref,
-                                                          event,
-                                                          calendar,
-                                                          state,
-                                                        ),
-                                                  );
-                                                },
-                                              ),
                                             _TimelineLayout.traditional =>
                                               ListView.separated(
                                                 physics:
@@ -432,19 +418,6 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                                   _openCreateEventSheet(context, ref, state),
                             ),
                           ),
-                          if (preferences.showActions)
-                            Positioned(
-                              right: 18,
-                              bottom: 82,
-                              child: FloatingActionButton.small(
-                                onPressed: () =>
-                                    _openCreateEventSheet(context, ref, state),
-                                elevation: 0,
-                                backgroundColor: tones.surfaceRaised,
-                                foregroundColor: tones.ink,
-                                child: const Icon(Icons.add_rounded),
-                              ),
-                            ),
                         ],
                       ),
                     ),
@@ -549,6 +522,9 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
       onEditSeriesAll: (template) =>
           controller.editSeriesAll(template.id, template),
       onExcludeOccurrence: controller.excludeOccurrence,
+      onEditSeriesFollowing: (template, fromDate) =>
+          controller.editSeriesFollowing(template.id, fromDate, template),
+      onTruncateSeries: controller.truncateSeriesFrom,
     );
   }
 
@@ -924,7 +900,13 @@ class _EventCard extends StatelessWidget {
         : tones.mutedInk;
     final showLeftBar = !colorCard && !suppressLeftBar;
 
-    return InkWell(
+    return Semantics(
+      button: true,
+      // Consolidate the card into one announcement instead of reading each
+      // text fragment separately.
+      label: '${event.title}, ${event.timeRange}, ${calendar.name}',
+      excludeSemantics: true,
+      child: InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(22),
       child: Ink(
@@ -1044,82 +1026,6 @@ class _EventCard extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Compact single-row representation used by the "List" (multi-line) layout:
-/// a calendar colour bar, the time, and the title with an optional location.
-class _MultiLineRow extends StatelessWidget {
-  const _MultiLineRow({
-    required this.event,
-    required this.calendar,
-    required this.onTap,
-  });
-
-  final PlannerEvent event;
-  final PlannerCalendar calendar;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final tones = context.plannerTones;
-    final subtitle = event.location.isNotEmpty ? event.location : calendar.name;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 4,
-              height: 38,
-              margin: const EdgeInsets.only(top: 2, right: 12),
-              decoration: BoxDecoration(
-                color: calendar.color,
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            SizedBox(
-              width: 64,
-              child: Text(
-                event.isAllDay
-                    ? 'All day'
-                    : MaterialLocalizations.of(context).formatTimeOfDay(
-                        TimeOfDay.fromDateTime(event.startAt),
-                      ),
-                style: textTheme.bodyMedium?.copyWith(
-                  color: tones.ink,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    event.title,
-                    style: textTheme.titleMedium?.copyWith(fontSize: 15),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    subtitle,
-                    style: textTheme.bodyMedium?.copyWith(color: tones.mutedInk),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1592,7 +1498,7 @@ class _PlannerMenu extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final textTheme = Theme.of(context).textTheme;
-    final storageMode = ref.watch(selectedStorageModeProvider).asData?.value;
+    final user = ref.watch(firebaseUserProvider).asData?.value;
     final account =
         ref.watch(localAccountControllerProvider).asData?.value ??
         LocalAccountState.defaults();
@@ -1602,18 +1508,17 @@ class _PlannerMenu extends ConsumerWidget {
     final accent = preferences.accentPalette.color;
     final items = [
       PlannerMenuDestination.search,
-      PlannerMenuDestination.rsvp,
       PlannerMenuDestination.calendars,
       PlannerMenuDestination.themes,
       PlannerMenuDestination.preferences,
-      PlannerMenuDestination.smartAlerts,
       PlannerMenuDestination.textSize,
-      PlannerMenuDestination.travel,
       PlannerMenuDestination.whatsNew,
       PlannerMenuDestination.welcome,
       PlannerMenuDestination.help,
       PlannerMenuDestination.account,
-      // PlannerMenuDestination.paywall — hidden until RevenueCat billing is wired
+      // Hidden for v1 (non-functional scaffolds / no billing):
+      //   rsvp, smartAlerts, travel — feature stubs with no backend
+      //   paywall — billing deferred; ships free
     ];
 
     return Drawer(
@@ -1632,17 +1537,14 @@ class _PlannerMenu extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '${account.remainingTrialDays}',
+                account.displayName.isEmpty
+                    ? 'Hello'
+                    : 'Hello,\n${account.displayName}',
                 style: textTheme.displayMedium?.copyWith(
                   color: accent,
-                  fontSize: 42,
+                  fontSize: 30,
+                  height: 1.1,
                 ),
-              ),
-              Text(
-                account.hasPremiumPreview
-                    ? 'Trial days remaining'
-                    : 'Preview days remaining',
-                style: textTheme.bodyMedium?.copyWith(color: Colors.white60),
               ),
               const SizedBox(height: 24),
               Text(
@@ -1653,47 +1555,43 @@ class _PlannerMenu extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 18),
-              if (storageMode != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        storageMode == StorageMode.localSqlite
-                            ? Icons.phone_android_rounded
-                            : Icons.cloud_outlined,
-                        color: Colors.white70,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          storageMode.label,
-                          style: textTheme.bodyMedium?.copyWith(
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
                 ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      user != null
+                          ? Icons.cloud_done_outlined
+                          : Icons.cloud_off_outlined,
+                      color: Colors.white70,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        user?.email ?? user?.displayName ?? 'Synced to cloud',
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: Colors.white,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 24),
               for (final item in items) ...[
                 InkWell(
                   onTap: () {
                     Navigator.of(context).pop();
-                    openPlannerMenuDestination(
-                      context,
-                      item,
-                      storageMode: storageMode,
-                    );
+                    openPlannerMenuDestination(context, item);
                   },
                   borderRadius: BorderRadius.circular(12),
                   child: Padding(
@@ -1715,26 +1613,25 @@ class _PlannerMenu extends ConsumerWidget {
                 const SizedBox(height: 4),
               ],
               const Spacer(),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () async {
-                    await ref
-                        .read(selectedStorageModeProvider.notifier)
-                        .reset();
-                    if (context.mounted) {
-                      Navigator.of(context).pop();
-                    }
-                  },
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: BorderSide(
-                      color: Colors.white.withValues(alpha: 0.24),
+              if (user != null)
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      await ref.read(firebaseAuthServiceProvider).signOut();
+                      if (context.mounted) {
+                        Navigator.of(context).pop();
+                      }
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.24),
+                      ),
                     ),
+                    child: const Text('Sign Out'),
                   ),
-                  child: const Text('Change Storage Mode'),
                 ),
-              ),
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.bottomRight,

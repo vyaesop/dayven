@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/calendars/secondary_calendar.dart';
+
+export '../../../core/calendars/secondary_calendar.dart'
+    show SecondaryCalendar, SecondaryCalendarX;
+
 enum PlannerThemeMode { mono, vivid, muted, dark }
 
 extension PlannerThemeModeX on PlannerThemeMode {
@@ -154,6 +159,7 @@ class AppPreferences {
     required this.appIconBadge,
     required this.appIconMatchTheme,
     required this.textScale,
+    required this.secondaryCalendar,
   });
 
   factory AppPreferences.defaults() {
@@ -189,6 +195,7 @@ class AppPreferences {
       appIconBadge: 'None',
       appIconMatchTheme: true,
       textScale: 1,
+      secondaryCalendar: SecondaryCalendar.none,
     );
   }
 
@@ -223,6 +230,7 @@ class AppPreferences {
   final String appIconBadge;
   final bool appIconMatchTheme;
   final double textScale;
+  final SecondaryCalendar secondaryCalendar;
 
   AppPreferences copyWith({
     PlannerThemeMode? themeMode,
@@ -256,6 +264,7 @@ class AppPreferences {
     String? appIconBadge,
     bool? appIconMatchTheme,
     double? textScale,
+    SecondaryCalendar? secondaryCalendar,
   }) {
     return AppPreferences(
       themeMode: themeMode ?? this.themeMode,
@@ -289,6 +298,7 @@ class AppPreferences {
       appIconBadge: appIconBadge ?? this.appIconBadge,
       appIconMatchTheme: appIconMatchTheme ?? this.appIconMatchTheme,
       textScale: textScale ?? this.textScale,
+      secondaryCalendar: secondaryCalendar ?? this.secondaryCalendar,
     );
   }
 }
@@ -330,6 +340,7 @@ class AppPreferencesController extends AsyncNotifier<AppPreferences> {
   static const _appIconBadgeKey = 'pref_app_icon_badge';
   static const _appIconMatchThemeKey = 'pref_app_icon_match_theme';
   static const _textScaleKey = 'pref_text_scale';
+  static const _secondaryCalendarKey = 'pref_secondary_calendar';
 
   @override
   Future<AppPreferences> build() async {
@@ -395,6 +406,9 @@ class AppPreferencesController extends AsyncNotifier<AppPreferences> {
       appIconMatchTheme:
           prefs.getBool(_appIconMatchThemeKey) ?? defaults.appIconMatchTheme,
       textScale: prefs.getDouble(_textScaleKey) ?? defaults.textScale,
+      secondaryCalendar: secondaryCalendarFromStorage(
+        prefs.getString(_secondaryCalendarKey),
+      ),
     );
   }
 
@@ -495,6 +509,10 @@ class AppPreferencesController extends AsyncNotifier<AppPreferences> {
     return _update((current) => current.copyWith(textScale: value));
   }
 
+  Future<void> setSecondaryCalendar(SecondaryCalendar value) {
+    return _update((current) => current.copyWith(secondaryCalendar: value));
+  }
+
   Future<void> resetPreferences() async {
     final defaults = AppPreferences.defaults();
     state = AsyncData(defaults);
@@ -564,6 +582,10 @@ class AppPreferencesController extends AsyncNotifier<AppPreferences> {
     await prefs.setString(_appIconBadgeKey, preferences.appIconBadge);
     await prefs.setBool(_appIconMatchThemeKey, preferences.appIconMatchTheme);
     await prefs.setDouble(_textScaleKey, preferences.textScale);
+    await prefs.setString(
+      _secondaryCalendarKey,
+      preferences.secondaryCalendar.storageValue,
+    );
   }
 
   PlannerThemeMode _parseThemeMode(String? value, PlannerThemeMode fallback) {

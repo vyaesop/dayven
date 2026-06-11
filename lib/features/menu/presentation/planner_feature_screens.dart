@@ -8,7 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/theme/app_theme.dart';
 import '../../../core/auth/firebase_auth_service.dart';
 import '../../../core/notifications/push_notification_service.dart';
-import '../../../core/storage/storage_mode.dart';
+import '../../../core/storage/local_cache_store.dart';
+import '../../../core/storage/mutation_queue.dart';
 import '../../account/application/local_account_controller.dart';
 import '../../home/application/planner_controller.dart';
 import '../../home/domain/planner_models.dart';
@@ -108,20 +109,17 @@ extension PlannerMenuDestinationX on PlannerMenuDestination {
 
 void openPlannerMenuDestination(
   BuildContext context,
-  PlannerMenuDestination destination, {
-  StorageMode? storageMode,
-}) {
+  PlannerMenuDestination destination,
+) {
   Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) =>
-          _FeatureScaffold(destination: destination, storageMode: storageMode),
+      builder: (_) => _FeatureScaffold(destination: destination),
     ),
   );
 }
 
 Widget _destinationBody(
   PlannerMenuDestination destination,
-  StorageMode? storageMode,
 ) {
   switch (destination) {
     case PlannerMenuDestination.search:
@@ -143,7 +141,7 @@ Widget _destinationBody(
     case PlannerMenuDestination.help:
       return const _SupportSurface();
     case PlannerMenuDestination.account:
-      return _AccountSurface(storageMode: storageMode);
+      return const _AccountSurface();
     case PlannerMenuDestination.paywall:
       return const _PaywallSurface();
     case PlannerMenuDestination.signIn:
@@ -158,10 +156,9 @@ Widget _destinationBody(
 }
 
 class _FeatureScaffold extends ConsumerWidget {
-  const _FeatureScaffold({required this.destination, this.storageMode});
+  const _FeatureScaffold({required this.destination});
 
   final PlannerMenuDestination destination;
-  final StorageMode? storageMode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -227,7 +224,7 @@ class _FeatureScaffold extends ConsumerWidget {
               Expanded(
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
-                  child: _destinationBody(destination, storageMode),
+                  child: _destinationBody(destination),
                 ),
               ),
             ],
@@ -322,13 +319,6 @@ class _GeneralSettings extends StatelessWidget {
         _SettingsGroup(
           title: 'Day View',
           children: [
-            _SwitchRow(
-              title: 'Quick add button',
-              note: 'Floating + button on the timeline',
-              value: prefs.showActions,
-              onChanged: (v) =>
-                  notifier.setBoolPreference(PreferenceKeys.showActions, v),
-            ),
             _SwitchRow(
               title: 'Weather card',
               note: 'Show weather + briefing on the day view',
@@ -466,17 +456,6 @@ class _TimelineSettingsState extends State<_TimelineSettings> {
           ],
         ),
         _SettingsGroup(
-          title: 'Floating Add Button',
-          children: [
-            _SwitchRow(
-              title: 'Show button on timeline',
-              value: prefs.showActions,
-              onChanged: (v) =>
-                  notifier.setBoolPreference(PreferenceKeys.showActions, v),
-            ),
-          ],
-        ),
-        _SettingsGroup(
           title: 'Days at a Glance',
           children: [
             for (final n in [3, 4, 5, 6, 7, 8, 9, 10])
@@ -491,13 +470,17 @@ class _TimelineSettingsState extends State<_TimelineSettings> {
         _SettingsGroup(
           title: 'Layout Mode',
           children: [
-            for (final mode in ['Traditional', 'Day Hourly', 'Multi-line'])
+            // value -> friendly label. Two layouts in v1: Cards and Hourly.
+            for (final entry in const {
+              'Traditional': 'Cards',
+              'Day Hourly': 'Hourly',
+            }.entries)
               _ChoiceRow(
-                title: mode,
-                selected: prefs.timelineLayoutMode == mode,
+                title: entry.value,
+                selected: prefs.timelineLayoutMode == entry.key,
                 onTap: () => notifier.setStringPreference(
                   PreferenceKeys.timelineLayoutMode,
-                  mode,
+                  entry.key,
                 ),
               ),
           ],
@@ -598,6 +581,28 @@ class _CalendarSettingsSurface extends ConsumerWidget {
                 value,
               ),
             ),
+          ],
+        ),
+        _SettingsGroup(
+          title: 'Secondary Calendar',
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 10, right: 4),
+              child: Text(
+                'Show a second calendar date beneath the main date. '
+                'Off by default.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: _lightPanelMutedInk,
+                  height: 1.35,
+                ),
+              ),
+            ),
+            for (final option in SecondaryCalendar.values)
+              _ChoiceRow(
+                title: option.label,
+                selected: prefs.secondaryCalendar == option,
+                onTap: () => prefController.setSecondaryCalendar(option),
+              ),
           ],
         ),
       ],
@@ -1433,9 +1438,7 @@ class _TravelSurfaceState extends ConsumerState<_TravelSurface> {
 // ─── Account ─────────────────────────────────────────────────────────────────
 
 class _AccountSurface extends ConsumerWidget {
-  const _AccountSurface({required this.storageMode});
-
-  final StorageMode? storageMode;
+  const _AccountSurface();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1443,6 +1446,7 @@ class _AccountSurface extends ConsumerWidget {
         ref.watch(localAccountControllerProvider).asData?.value ??
         LocalAccountState.defaults();
     final accountController = ref.read(localAccountControllerProvider.notifier);
+    final user = ref.watch(firebaseUserProvider).asData?.value;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1451,8 +1455,9 @@ class _AccountSurface extends ConsumerWidget {
           title: account.isSignedIn
               ? 'Hello ${account.displayName.isEmpty ? 'there' : account.displayName}'
               : 'Your planner account',
-          body:
-              'Storage mode: ${storageMode?.label ?? 'Not selected'}. ${account.isSignedIn ? account.email : 'This local profile is saved only on this device for now.'}',
+          body: user != null
+              ? 'Synced to the cloud as ${user.email ?? user.displayName ?? 'your account'}. Your planner is available on every device you sign in to.'
+              : 'Sign in to sync your planner to the cloud and across your devices.',
           icon: Icons.person_rounded,
           iconColor: AppColors.lilac,
         ),
@@ -1469,35 +1474,12 @@ class _AccountSurface extends ConsumerWidget {
             ),
           ],
         ),
-        _SettingsGroup(
-          title: 'Membership',
+        const _SettingsGroup(
+          title: 'Plan',
           children: [
-            _InfoRow(
-              title: 'Status',
-              value: account.hasPremiumPreview
-                  ? 'Premium preview'
-                  : 'Free plan',
-            ),
-            _InfoRow(
-              title: 'Trial',
-              value: '${account.remainingTrialDays} days remaining',
-            ),
-            _InfoRow(title: 'Selected plan', value: account.selectedPlan),
-            _InfoRow(
-              title: 'Redeemed codes',
-              value: account.redeemedCodes.isEmpty
-                  ? 'None'
-                  : '${account.redeemedCodes.length}',
-            ),
+            _InfoRow(title: 'Plan', value: 'Free — all features included'),
           ],
         ),
-        _PrimaryAction(
-          label: 'View Membership',
-          icon: Icons.workspace_premium_rounded,
-          destination: PlannerMenuDestination.paywall,
-          storageMode: storageMode,
-        ),
-        const SizedBox(height: 12),
         _PrimaryAction(
           label: account.isSignedIn ? 'Edit Profile' : 'Sign In',
           icon: Icons.login_rounded,
@@ -1542,13 +1524,30 @@ class _AccountSurface extends ConsumerWidget {
               );
               if (confirmed != true) return;
 
-              // Delete cloud data + Firebase account if in cloud sync mode
-              if (storageMode == StorageMode.cloudSync) {
+              // Cloud-only: purge the server copy first. If the server can't be
+              // reached we must NOT wipe local state or sign out, otherwise the
+              // user is left believing their cloud data is gone when it isn't.
+              if (user != null) {
                 try {
                   final client = ref.read(apiClientProvider);
                   await client.delete('/v1/auth/user');
-                  await ref.read(firebaseAuthServiceProvider).signOut();
-                } catch (_) {}
+                } catch (_) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Could not reach the server to delete your cloud '
+                          'data. Check your connection and try again.',
+                        ),
+                      ),
+                    );
+                  }
+                  return;
+                }
+                // Server data is gone — clear the on-device mirror and queue.
+                await LocalCacheStore(userId: user.uid).clear();
+                await MutationQueue(userId: user.uid).clear();
+                await ref.read(firebaseAuthServiceProvider).signOut();
               }
 
               await accountController.deleteLocalAccount();
@@ -3534,24 +3533,18 @@ class _PrimaryAction extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.destination,
-    this.storageMode,
   });
 
   final String label;
   final IconData icon;
   final PlannerMenuDestination destination;
-  final StorageMode? storageMode;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
       child: FilledButton.icon(
-        onPressed: () => openPlannerMenuDestination(
-          context,
-          destination,
-          storageMode: storageMode,
-        ),
+        onPressed: () => openPlannerMenuDestination(context, destination),
         style: FilledButton.styleFrom(
           backgroundColor: Colors.white,
           foregroundColor: AppColors.ink,
@@ -3653,10 +3646,12 @@ class _WelcomeSurfaceState extends State<_WelcomeSurface> {
           'Choose from Mono, Vivid, Muted, or Dark mode with a full accent palette.',
     ),
     _WelcomeSlide(
-      icon: Icons.notifications_active_rounded,
+      icon: Icons.public_rounded,
       iconColor: AppColors.lilac,
-      title: 'Smart Alerts',
-      body: 'Get rain alerts, daily briefings, and upcoming event reminders.',
+      title: 'Dual Calendars',
+      body:
+          'Show a second date alongside the Gregorian one — Ethiopian, Hijri, '
+          'Hebrew, Persian, or Buddhist. Turn it on in Preferences.',
     ),
   ];
 
