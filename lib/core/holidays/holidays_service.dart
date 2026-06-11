@@ -6,12 +6,23 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/home/domain/planner_models.dart';
+import 'ethiopian_holidays.dart';
 
 class HolidayCountry {
   const HolidayCountry({required this.code, required this.name});
   final String code;
   final String name;
 }
+
+/// The outcome of loading public holidays: the calendar they belong to, the
+/// events, and which country/year they were fetched for (so the caller can mark
+/// the year loaded only after persisting them).
+typedef HolidayLoadResult = ({
+  PlannerCalendar calendar,
+  List<PlannerEvent> events,
+  String countryCode,
+  int year,
+});
 
 class HolidaysService {
   static const _calendarId = 'public_holidays';
@@ -20,14 +31,36 @@ class HolidaysService {
   static const _prefsPrefix = 'holidays_loaded_';
   // Bump _cacheVersion whenever the fallback list changes to invalidate
   // any previously cached country list on device.
-  static const _cacheVersion = 2;
+  static const _cacheVersion = 4;
   static String get _countriesCacheKey => 'holidays_countries_cache_v$_cacheVersion';
+  // Refresh the cached country list at most this often so new Nager.Date
+  // countries eventually show up without a fetch on every launch.
+  static const _countriesCacheTtl = Duration(days: 30);
+
+  // Countries we serve from a built-in/computed source rather than Nager.Date.
+  // These are always offered in the picker, regardless of the online list.
+  static const List<HolidayCountry> _builtInCountries = [
+    HolidayCountry(
+      code: EthiopianHolidays.countryCode,
+      name: EthiopianHolidays.countryName,
+    ),
+  ];
 
   static HolidaysService? _instance;
   static HolidaysService get instance => _instance ??= HolidaysService._();
   HolidaysService._();
 
   List<HolidayCountry>? _countriesCache;
+
+  /// Adds the built-in countries to [base] (deduping by code) and sorts by name,
+  /// so locally-supported countries always appear in the picker.
+  List<HolidayCountry> _withBuiltIns(List<HolidayCountry> base) {
+    final byCode = {for (final c in base) c.code: c};
+    for (final c in _builtInCountries) {
+      byCode.putIfAbsent(c.code, () => c);
+    }
+    return byCode.values.toList()..sort((a, b) => a.name.compareTo(b.name));
+  }
 
   // ── Country list ────────────────────────────────────────────────────────────
 
@@ -36,59 +69,64 @@ class HolidaysService {
   Future<List<HolidayCountry>> availableCountries() async {
     if (_countriesCache != null) return _countriesCache!;
 
-    // Try memory-less disk cache first.
+    // Try memory-less disk cache first, but only if it's still fresh.
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_countriesCacheKey);
       if (raw != null) {
-        final list = jsonDecode(raw) as List<dynamic>;
-        _countriesCache = list
-            .map((e) => HolidayCountry(
-                  code: e['code'] as String,
-                  name: e['name'] as String,
-                ))
-            .toList();
-        return _countriesCache!;
+        final decoded = jsonDecode(raw) as Map<String, dynamic>;
+        final fetchedAt = decoded['fetched_at'] as int? ?? 0;
+        final age = DateTime.now().millisecondsSinceEpoch - fetchedAt;
+        if (age >= 0 && age < _countriesCacheTtl.inMilliseconds) {
+          final list = decoded['countries'] as List<dynamic>;
+          _countriesCache = _withBuiltIns(list
+              .map((e) => HolidayCountry(
+                    code: e['code'] as String,
+                    name: e['name'] as String,
+                  ))
+              .toList());
+          return _countriesCache!;
+        }
       }
     } catch (_) {}
 
-    // Fetch live from Nager.Date and merge with fallback so no country
-    // is ever missing (API may not include every country in the fallback).
+    // Fetch the live list from Nager.Date. This is the AUTHORITATIVE set of
+    // countries that actually have holiday data — we must NOT union it with the
+    // built-in fallback, or we'd offer countries the provider can't serve (e.g.
+    // Ethiopia), whose holiday endpoint returns 204/empty so nothing appears.
     try {
       final res = await http
           .get(Uri.parse('https://date.nager.at/api/v3/AvailableCountries'))
           .timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
         final list = jsonDecode(res.body) as List<dynamic>;
-        final apiMap = <String, String>{};
-        for (final e in list) {
-          apiMap[e['countryCode'] as String] = e['name'] as String;
-        }
-        // Start with all fallback entries, then overlay any API names.
-        final merged = <String, String>{
-          for (final c in _fallbackCountries) c.code: c.name,
-          ...apiMap,
-        };
-        _countriesCache = merged.entries
-            .map((e) => HolidayCountry(code: e.key, name: e.value))
+        final live = list
+            .map((e) => HolidayCountry(
+                  code: e['countryCode'] as String,
+                  name: e['name'] as String,
+                ))
             .toList()
           ..sort((a, b) => a.name.compareTo(b.name));
 
+        // Cache the pure live list; built-ins are layered in on every read.
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(
           _countriesCacheKey,
-          jsonEncode(_countriesCache!
-              .map((c) => {'code': c.code, 'name': c.name})
-              .toList()),
+          jsonEncode({
+            'fetched_at': DateTime.now().millisecondsSinceEpoch,
+            'countries':
+                live.map((c) => {'code': c.code, 'name': c.name}).toList(),
+          }),
         );
+        _countriesCache = _withBuiltIns(live);
         return _countriesCache!;
       }
     } catch (e) {
       debugPrint('HolidaysService: country list fetch failed: $e');
     }
 
-    // Built-in fallback — comprehensive list sorted alphabetically.
-    _countriesCache = _fallbackCountries;
+    // Offline fallback — the built-in supported list plus local countries.
+    _countriesCache = _withBuiltIns(_fallbackCountries);
     return _countriesCache!;
   }
 
@@ -106,42 +144,35 @@ class HolidaysService {
   // ── Loading ──────────────────────────────────────────────────────────────────
 
   /// Auto-loads holidays for the device locale on first run of the year.
-  Future<({PlannerCalendar calendar, List<PlannerEvent> events})?> loadForYear(
+  Future<HolidayLoadResult?> loadForYear(
     int year,
     List<PlannerCalendar> existingCalendars,
   ) async {
     final countryCode = _detectCountryCode();
-    final prefsKey = '$_prefsPrefix${year}_$countryCode';
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool(prefsKey) == true) return null;
+    if (prefs.getBool('$_prefsPrefix${year}_$countryCode') == true) return null;
 
-    return _load(year, countryCode, existingCalendars, prefs, prefsKey);
+    return _load(year, countryCode);
   }
 
   /// Loads holidays for a specific country, always (used by manual picker).
   /// Does NOT skip already-loaded countries so users can re-add if needed.
-  Future<({PlannerCalendar calendar, List<PlannerEvent> events})?> loadForCountry(
+  Future<HolidayLoadResult?> loadForCountry(
     int year,
     String countryCode,
     List<PlannerCalendar> existingCalendars,
   ) async {
-    final prefs = await SharedPreferences.getInstance();
-    final prefsKey = '$_prefsPrefix${year}_$countryCode';
-    return _load(year, countryCode, existingCalendars, prefs, prefsKey);
+    return _load(year, countryCode);
   }
 
-  Future<({PlannerCalendar calendar, List<PlannerEvent> events})?> _load(
-    int year,
-    String countryCode,
-    List<PlannerCalendar> existingCalendars,
-    SharedPreferences prefs,
-    String prefsKey,
-  ) async {
+  Future<HolidayLoadResult?> _load(int year, String countryCode) async {
     final events = await _fetchHolidays(year, countryCode);
     if (events == null) return null;
 
-    await prefs.setBool(prefsKey, true);
-
+    // NOTE: we intentionally do NOT mark the year as loaded here. The "loaded"
+    // flag must only be set once the events have been durably persisted (see
+    // [markYearLoaded]); otherwise — e.g. in cloud-sync mode where saving is a
+    // no-op — the holidays would vanish on restart yet never be re-fetched.
     return (
       calendar: const PlannerCalendar(
         id: _calendarId,
@@ -149,11 +180,27 @@ class HolidaysService {
         color: _calendarColor,
       ),
       events: events,
+      countryCode: countryCode,
+      year: year,
     );
+  }
+
+  /// Records that [countryCode]'s holidays for [year] have been durably stored,
+  /// so auto-load won't re-fetch them on the next launch.
+  Future<void> markYearLoaded(int year, String countryCode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('$_prefsPrefix${year}_$countryCode', true);
   }
 
   Future<List<PlannerEvent>?> _fetchHolidays(
       int year, String countryCode) async {
+    // Countries Nager.Date can't serve are produced from a built-in source.
+    if (EthiopianHolidays.supports(countryCode)) {
+      return EthiopianHolidays.forYear(year)
+          .map((h) => _holidayEvent(countryCode, h.date, h.name, h.name))
+          .toList();
+    }
+
     try {
       final url = Uri.parse(
         'https://date.nager.at/api/v3/PublicHolidays/$year/$countryCode',
@@ -168,28 +215,38 @@ class HolidaysService {
         final localName =
             map['localName'] as String? ?? map['name'] as String? ?? 'Holiday';
         final engName = map['name'] as String? ?? localName;
-        // Include country code in id so events from different countries don't
-        // collide even if they share the same date and local name.
-        final id = 'holiday_${countryCode}_${date.toIso8601String()}_$localName';
-        return PlannerEvent(
-          id: id,
-          title: localName,
-          isAllDay: true,
-          startAt: date,
-          endAt: date,
-          location: '',
-          url: '',
-          note: engName != localName ? engName : '',
-          calendarId: _calendarId,
-          reminder: PlannerReminder.none,
-          repeatRule: PlannerRepeatRule.never,
-          attendees: const [],
-        );
+        return _holidayEvent(countryCode, date, localName, engName);
       }).toList();
     } catch (e) {
       debugPrint('HolidaysService._fetchHolidays error: $e');
       return null;
     }
+  }
+
+  PlannerEvent _holidayEvent(
+    String countryCode,
+    DateTime date,
+    String localName,
+    String engName,
+  ) {
+    final day = DateTime(date.year, date.month, date.day);
+    // Include country code in id so events from different countries don't
+    // collide even if they share the same date and local name.
+    final id = 'holiday_${countryCode}_${day.toIso8601String()}_$localName';
+    return PlannerEvent(
+      id: id,
+      title: localName,
+      isAllDay: true,
+      startAt: day,
+      endAt: day,
+      location: '',
+      url: '',
+      note: engName != localName ? engName : '',
+      calendarId: _calendarId,
+      reminder: PlannerReminder.none,
+      repeatRule: PlannerRepeatRule.never,
+      attendees: const [],
+    );
   }
 
   String _detectCountryCode() {
@@ -204,174 +261,135 @@ class HolidaysService {
   }
 
   // ── Fallback country list ────────────────────────────────────────────────────
-  // Used when the network call to AvailableCountries fails.
-  // Sourced from https://date.nager.at/api/v3/AvailableCountries (2024).
+  // The exact set of countries Nager.Date supports, used when the live call to
+  // AvailableCountries fails. This must stay limited to countries the provider
+  // actually serves — listing unsupported ones (e.g. Ethiopia) only offers
+  // choices whose holiday endpoint returns 204/empty, so nothing would appear.
+  // Names are ASCII-normalised; the live list may show localised spellings.
+  // Sourced from https://date.nager.at/api/v3/AvailableCountries.
   static const List<HolidayCountry> _fallbackCountries = [
-    HolidayCountry(code: 'AD', name: 'Andorra'),
-    HolidayCountry(code: 'AE', name: 'United Arab Emirates'),
-    HolidayCountry(code: 'AG', name: 'Antigua & Barbuda'),
-    HolidayCountry(code: 'AI', name: 'Anguilla'),
-    HolidayCountry(code: 'AL', name: 'Albania'),
-    HolidayCountry(code: 'AM', name: 'Armenia'),
-    HolidayCountry(code: 'AO', name: 'Angola'),
-    HolidayCountry(code: 'AR', name: 'Argentina'),
-    HolidayCountry(code: 'AT', name: 'Austria'),
-    HolidayCountry(code: 'AU', name: 'Australia'),
-    HolidayCountry(code: 'AW', name: 'Aruba'),
-    HolidayCountry(code: 'AZ', name: 'Azerbaijan'),
-    HolidayCountry(code: 'BA', name: 'Bosnia & Herzegovina'),
-    HolidayCountry(code: 'BB', name: 'Barbados'),
-    HolidayCountry(code: 'BD', name: 'Bangladesh'),
-    HolidayCountry(code: 'BE', name: 'Belgium'),
-    HolidayCountry(code: 'BG', name: 'Bulgaria'),
-    HolidayCountry(code: 'BH', name: 'Bahrain'),
-    HolidayCountry(code: 'BM', name: 'Bermuda'),
-    HolidayCountry(code: 'BN', name: 'Brunei'),
-    HolidayCountry(code: 'BO', name: 'Bolivia'),
-    HolidayCountry(code: 'BR', name: 'Brazil'),
-    HolidayCountry(code: 'BS', name: 'Bahamas'),
-    HolidayCountry(code: 'BW', name: 'Botswana'),
-    HolidayCountry(code: 'BY', name: 'Belarus'),
-    HolidayCountry(code: 'BZ', name: 'Belize'),
-    HolidayCountry(code: 'CA', name: 'Canada'),
-    HolidayCountry(code: 'CH', name: 'Switzerland'),
-    HolidayCountry(code: 'CL', name: 'Chile'),
-    HolidayCountry(code: 'CM', name: 'Cameroon'),
-    HolidayCountry(code: 'CN', name: 'China'),
-    HolidayCountry(code: 'CO', name: 'Colombia'),
-    HolidayCountry(code: 'CR', name: 'Costa Rica'),
-    HolidayCountry(code: 'CU', name: 'Cuba'),
-    HolidayCountry(code: 'CW', name: 'Curaçao'),
-    HolidayCountry(code: 'CY', name: 'Cyprus'),
-    HolidayCountry(code: 'CZ', name: 'Czech Republic'),
-    HolidayCountry(code: 'DE', name: 'Germany'),
-    HolidayCountry(code: 'DJ', name: 'Djibouti'),
-    HolidayCountry(code: 'DK', name: 'Denmark'),
-    HolidayCountry(code: 'DM', name: 'Dominica'),
-    HolidayCountry(code: 'DO', name: 'Dominican Republic'),
-    HolidayCountry(code: 'DZ', name: 'Algeria'),
-    HolidayCountry(code: 'EC', name: 'Ecuador'),
-    HolidayCountry(code: 'EE', name: 'Estonia'),
-    HolidayCountry(code: 'EG', name: 'Egypt'),
-    HolidayCountry(code: 'ES', name: 'Spain'),
-    HolidayCountry(code: 'ET', name: 'Ethiopia'),
-    HolidayCountry(code: 'FI', name: 'Finland'),
-    HolidayCountry(code: 'FJ', name: 'Fiji'),
-    HolidayCountry(code: 'FR', name: 'France'),
-    HolidayCountry(code: 'GA', name: 'Gabon'),
-    HolidayCountry(code: 'GB', name: 'United Kingdom'),
-    HolidayCountry(code: 'GD', name: 'Grenada'),
-    HolidayCountry(code: 'GE', name: 'Georgia'),
-    HolidayCountry(code: 'GH', name: 'Ghana'),
-    HolidayCountry(code: 'GI', name: 'Gibraltar'),
-    HolidayCountry(code: 'GL', name: 'Greenland'),
-    HolidayCountry(code: 'GM', name: 'Gambia'),
-    HolidayCountry(code: 'GR', name: 'Greece'),
-    HolidayCountry(code: 'GT', name: 'Guatemala'),
-    HolidayCountry(code: 'GY', name: 'Guyana'),
-    HolidayCountry(code: 'HK', name: 'Hong Kong'),
-    HolidayCountry(code: 'HN', name: 'Honduras'),
-    HolidayCountry(code: 'HR', name: 'Croatia'),
-    HolidayCountry(code: 'HT', name: 'Haiti'),
-    HolidayCountry(code: 'HU', name: 'Hungary'),
-    HolidayCountry(code: 'ID', name: 'Indonesia'),
-    HolidayCountry(code: 'IE', name: 'Ireland'),
-    HolidayCountry(code: 'IL', name: 'Israel'),
-    HolidayCountry(code: 'IM', name: 'Isle of Man'),
-    HolidayCountry(code: 'IN', name: 'India'),
-    HolidayCountry(code: 'IS', name: 'Iceland'),
-    HolidayCountry(code: 'IT', name: 'Italy'),
-    HolidayCountry(code: 'JM', name: 'Jamaica'),
-    HolidayCountry(code: 'JO', name: 'Jordan'),
-    HolidayCountry(code: 'JP', name: 'Japan'),
-    HolidayCountry(code: 'KE', name: 'Kenya'),
-    HolidayCountry(code: 'KR', name: 'South Korea'),
-    HolidayCountry(code: 'KW', name: 'Kuwait'),
-    HolidayCountry(code: 'KZ', name: 'Kazakhstan'),
-    HolidayCountry(code: 'LA', name: 'Laos'),
-    HolidayCountry(code: 'LB', name: 'Lebanon'),
-    HolidayCountry(code: 'LC', name: 'Saint Lucia'),
-    HolidayCountry(code: 'LI', name: 'Liechtenstein'),
-    HolidayCountry(code: 'LK', name: 'Sri Lanka'),
-    HolidayCountry(code: 'LR', name: 'Liberia'),
-    HolidayCountry(code: 'LS', name: 'Lesotho'),
-    HolidayCountry(code: 'LT', name: 'Lithuania'),
-    HolidayCountry(code: 'LU', name: 'Luxembourg'),
-    HolidayCountry(code: 'LV', name: 'Latvia'),
-    HolidayCountry(code: 'MA', name: 'Morocco'),
-    HolidayCountry(code: 'MC', name: 'Monaco'),
-    HolidayCountry(code: 'MD', name: 'Moldova'),
-    HolidayCountry(code: 'ME', name: 'Montenegro'),
-    HolidayCountry(code: 'MG', name: 'Madagascar'),
-    HolidayCountry(code: 'MK', name: 'North Macedonia'),
-    HolidayCountry(code: 'MM', name: 'Myanmar'),
-    HolidayCountry(code: 'MN', name: 'Mongolia'),
-    HolidayCountry(code: 'MO', name: 'Macau'),
-    HolidayCountry(code: 'MT', name: 'Malta'),
-    HolidayCountry(code: 'MU', name: 'Mauritius'),
-    HolidayCountry(code: 'MW', name: 'Malawi'),
-    HolidayCountry(code: 'MX', name: 'Mexico'),
-    HolidayCountry(code: 'MY', name: 'Malaysia'),
-    HolidayCountry(code: 'MZ', name: 'Mozambique'),
-    HolidayCountry(code: 'NA', name: 'Namibia'),
-    HolidayCountry(code: 'NE', name: 'Niger'),
-    HolidayCountry(code: 'NG', name: 'Nigeria'),
-    HolidayCountry(code: 'NI', name: 'Nicaragua'),
-    HolidayCountry(code: 'NL', name: 'Netherlands'),
-    HolidayCountry(code: 'NO', name: 'Norway'),
-    HolidayCountry(code: 'NP', name: 'Nepal'),
-    HolidayCountry(code: 'NZ', name: 'New Zealand'),
-    HolidayCountry(code: 'OM', name: 'Oman'),
-    HolidayCountry(code: 'PA', name: 'Panama'),
-    HolidayCountry(code: 'PE', name: 'Peru'),
-    HolidayCountry(code: 'PG', name: 'Papua New Guinea'),
-    HolidayCountry(code: 'PH', name: 'Philippines'),
-    HolidayCountry(code: 'PK', name: 'Pakistan'),
-    HolidayCountry(code: 'PL', name: 'Poland'),
-    HolidayCountry(code: 'PT', name: 'Portugal'),
-    HolidayCountry(code: 'PY', name: 'Paraguay'),
-    HolidayCountry(code: 'QA', name: 'Qatar'),
-    HolidayCountry(code: 'RO', name: 'Romania'),
-    HolidayCountry(code: 'RS', name: 'Serbia'),
-    HolidayCountry(code: 'RU', name: 'Russia'),
-    HolidayCountry(code: 'RW', name: 'Rwanda'),
-    HolidayCountry(code: 'SA', name: 'Saudi Arabia'),
-    HolidayCountry(code: 'SC', name: 'Seychelles'),
-    HolidayCountry(code: 'SD', name: 'Sudan'),
-    HolidayCountry(code: 'SE', name: 'Sweden'),
-    HolidayCountry(code: 'SG', name: 'Singapore'),
-    HolidayCountry(code: 'SI', name: 'Slovenia'),
-    HolidayCountry(code: 'SK', name: 'Slovakia'),
-    HolidayCountry(code: 'SL', name: 'Sierra Leone'),
-    HolidayCountry(code: 'SM', name: 'San Marino'),
-    HolidayCountry(code: 'SO', name: 'Somalia'),
-    HolidayCountry(code: 'SR', name: 'Suriname'),
-    HolidayCountry(code: 'SS', name: 'South Sudan'),
-    HolidayCountry(code: 'SV', name: 'El Salvador'),
-    HolidayCountry(code: 'SZ', name: 'Eswatini'),
-    HolidayCountry(code: 'TG', name: 'Togo'),
-    HolidayCountry(code: 'TH', name: 'Thailand'),
-    HolidayCountry(code: 'TJ', name: 'Tajikistan'),
-    HolidayCountry(code: 'TL', name: 'Timor-Leste'),
-    HolidayCountry(code: 'TM', name: 'Turkmenistan'),
-    HolidayCountry(code: 'TN', name: 'Tunisia'),
-    HolidayCountry(code: 'TO', name: 'Tonga'),
-    HolidayCountry(code: 'TR', name: 'Turkey'),
-    HolidayCountry(code: 'TT', name: 'Trinidad & Tobago'),
-    HolidayCountry(code: 'TW', name: 'Taiwan'),
-    HolidayCountry(code: 'TZ', name: 'Tanzania'),
-    HolidayCountry(code: 'UA', name: 'Ukraine'),
-    HolidayCountry(code: 'UG', name: 'Uganda'),
-    HolidayCountry(code: 'US', name: 'United States'),
-    HolidayCountry(code: 'UY', name: 'Uruguay'),
-    HolidayCountry(code: 'UZ', name: 'Uzbekistan'),
-    HolidayCountry(code: 'VA', name: 'Vatican City'),
-    HolidayCountry(code: 'VE', name: 'Venezuela'),
-    HolidayCountry(code: 'VN', name: 'Vietnam'),
-    HolidayCountry(code: 'WS', name: 'Samoa'),
-    HolidayCountry(code: 'YE', name: 'Yemen'),
-    HolidayCountry(code: 'ZA', name: 'South Africa'),
-    HolidayCountry(code: 'ZM', name: 'Zambia'),
-    HolidayCountry(code: 'ZW', name: 'Zimbabwe'),
+    HolidayCountry(code: "AX", name: "Aland Islands"),
+    HolidayCountry(code: "AL", name: "Albania"),
+    HolidayCountry(code: "AD", name: "Andorra"),
+    HolidayCountry(code: "AO", name: "Angola"),
+    HolidayCountry(code: "AR", name: "Argentina"),
+    HolidayCountry(code: "AM", name: "Armenia"),
+    HolidayCountry(code: "AU", name: "Australia"),
+    HolidayCountry(code: "AT", name: "Austria"),
+    HolidayCountry(code: "BS", name: "Bahamas"),
+    HolidayCountry(code: "BD", name: "Bangladesh"),
+    HolidayCountry(code: "BB", name: "Barbados"),
+    HolidayCountry(code: "BY", name: "Belarus"),
+    HolidayCountry(code: "BE", name: "Belgium"),
+    HolidayCountry(code: "BZ", name: "Belize"),
+    HolidayCountry(code: "BJ", name: "Benin"),
+    HolidayCountry(code: "BO", name: "Bolivia"),
+    HolidayCountry(code: "BA", name: "Bosnia and Herzegovina"),
+    HolidayCountry(code: "BW", name: "Botswana"),
+    HolidayCountry(code: "BR", name: "Brazil"),
+    HolidayCountry(code: "BG", name: "Bulgaria"),
+    HolidayCountry(code: "CA", name: "Canada"),
+    HolidayCountry(code: "CL", name: "Chile"),
+    HolidayCountry(code: "CN", name: "China"),
+    HolidayCountry(code: "CO", name: "Colombia"),
+    HolidayCountry(code: "CG", name: "Congo"),
+    HolidayCountry(code: "CR", name: "Costa Rica"),
+    HolidayCountry(code: "HR", name: "Croatia"),
+    HolidayCountry(code: "CU", name: "Cuba"),
+    HolidayCountry(code: "CY", name: "Cyprus"),
+    HolidayCountry(code: "CZ", name: "Czechia"),
+    HolidayCountry(code: "CD", name: "DR Congo"),
+    HolidayCountry(code: "DK", name: "Denmark"),
+    HolidayCountry(code: "DO", name: "Dominican Republic"),
+    HolidayCountry(code: "EC", name: "Ecuador"),
+    HolidayCountry(code: "EG", name: "Egypt"),
+    HolidayCountry(code: "SV", name: "El Salvador"),
+    HolidayCountry(code: "EE", name: "Estonia"),
+    HolidayCountry(code: "FO", name: "Faroe Islands"),
+    HolidayCountry(code: "FI", name: "Finland"),
+    HolidayCountry(code: "FR", name: "France"),
+    HolidayCountry(code: "GA", name: "Gabon"),
+    HolidayCountry(code: "GM", name: "Gambia"),
+    HolidayCountry(code: "GE", name: "Georgia"),
+    HolidayCountry(code: "DE", name: "Germany"),
+    HolidayCountry(code: "GH", name: "Ghana"),
+    HolidayCountry(code: "GI", name: "Gibraltar"),
+    HolidayCountry(code: "GR", name: "Greece"),
+    HolidayCountry(code: "GL", name: "Greenland"),
+    HolidayCountry(code: "GD", name: "Grenada"),
+    HolidayCountry(code: "GT", name: "Guatemala"),
+    HolidayCountry(code: "GG", name: "Guernsey"),
+    HolidayCountry(code: "GY", name: "Guyana"),
+    HolidayCountry(code: "HT", name: "Haiti"),
+    HolidayCountry(code: "HN", name: "Honduras"),
+    HolidayCountry(code: "HK", name: "Hong Kong"),
+    HolidayCountry(code: "HU", name: "Hungary"),
+    HolidayCountry(code: "IS", name: "Iceland"),
+    HolidayCountry(code: "ID", name: "Indonesia"),
+    HolidayCountry(code: "IE", name: "Ireland"),
+    HolidayCountry(code: "IM", name: "Isle of Man"),
+    HolidayCountry(code: "IT", name: "Italy"),
+    HolidayCountry(code: "JM", name: "Jamaica"),
+    HolidayCountry(code: "JP", name: "Japan"),
+    HolidayCountry(code: "JE", name: "Jersey"),
+    HolidayCountry(code: "KZ", name: "Kazakhstan"),
+    HolidayCountry(code: "KE", name: "Kenya"),
+    HolidayCountry(code: "LV", name: "Latvia"),
+    HolidayCountry(code: "LS", name: "Lesotho"),
+    HolidayCountry(code: "LI", name: "Liechtenstein"),
+    HolidayCountry(code: "LT", name: "Lithuania"),
+    HolidayCountry(code: "LU", name: "Luxembourg"),
+    HolidayCountry(code: "MG", name: "Madagascar"),
+    HolidayCountry(code: "MT", name: "Malta"),
+    HolidayCountry(code: "MX", name: "Mexico"),
+    HolidayCountry(code: "MD", name: "Moldova"),
+    HolidayCountry(code: "MC", name: "Monaco"),
+    HolidayCountry(code: "MN", name: "Mongolia"),
+    HolidayCountry(code: "ME", name: "Montenegro"),
+    HolidayCountry(code: "MS", name: "Montserrat"),
+    HolidayCountry(code: "MA", name: "Morocco"),
+    HolidayCountry(code: "MZ", name: "Mozambique"),
+    HolidayCountry(code: "NA", name: "Namibia"),
+    HolidayCountry(code: "NL", name: "Netherlands"),
+    HolidayCountry(code: "NZ", name: "New Zealand"),
+    HolidayCountry(code: "NI", name: "Nicaragua"),
+    HolidayCountry(code: "NE", name: "Niger"),
+    HolidayCountry(code: "NG", name: "Nigeria"),
+    HolidayCountry(code: "MK", name: "North Macedonia"),
+    HolidayCountry(code: "NO", name: "Norway"),
+    HolidayCountry(code: "PA", name: "Panama"),
+    HolidayCountry(code: "PG", name: "Papua New Guinea"),
+    HolidayCountry(code: "PY", name: "Paraguay"),
+    HolidayCountry(code: "PE", name: "Peru"),
+    HolidayCountry(code: "PH", name: "Philippines"),
+    HolidayCountry(code: "PL", name: "Poland"),
+    HolidayCountry(code: "PT", name: "Portugal"),
+    HolidayCountry(code: "PR", name: "Puerto Rico"),
+    HolidayCountry(code: "RO", name: "Romania"),
+    HolidayCountry(code: "RU", name: "Russia"),
+    HolidayCountry(code: "SM", name: "San Marino"),
+    HolidayCountry(code: "RS", name: "Serbia"),
+    HolidayCountry(code: "SC", name: "Seychelles"),
+    HolidayCountry(code: "SG", name: "Singapore"),
+    HolidayCountry(code: "SK", name: "Slovakia"),
+    HolidayCountry(code: "SI", name: "Slovenia"),
+    HolidayCountry(code: "ZA", name: "South Africa"),
+    HolidayCountry(code: "KR", name: "South Korea"),
+    HolidayCountry(code: "ES", name: "Spain"),
+    HolidayCountry(code: "SR", name: "Suriname"),
+    HolidayCountry(code: "SJ", name: "Svalbard and Jan Mayen"),
+    HolidayCountry(code: "SE", name: "Sweden"),
+    HolidayCountry(code: "CH", name: "Switzerland"),
+    HolidayCountry(code: "TN", name: "Tunisia"),
+    HolidayCountry(code: "TR", name: "Turkiye"),
+    HolidayCountry(code: "UG", name: "Uganda"),
+    HolidayCountry(code: "UA", name: "Ukraine"),
+    HolidayCountry(code: "GB", name: "United Kingdom"),
+    HolidayCountry(code: "US", name: "United States"),
+    HolidayCountry(code: "UY", name: "Uruguay"),
+    HolidayCountry(code: "VA", name: "Vatican City"),
+    HolidayCountry(code: "VE", name: "Venezuela"),
+    HolidayCountry(code: "VN", name: "Vietnam"),
+    HolidayCountry(code: "ZW", name: "Zimbabwe"),
   ];
 }

@@ -10,7 +10,7 @@ Future<void> showCalendarFilterSheet({
   required ValueChanged<String> onToggleCalendar,
   required VoidCallback onShowAll,
   required Future<void> Function(String name, Color color) onCreateCalendar,
-  required Future<void> Function(String countryCode) onLoadHolidays,
+  required Future<bool> Function(String countryCode) onLoadHolidays,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -36,7 +36,7 @@ class _CalendarFilterSheet extends ConsumerStatefulWidget {
   final ValueChanged<String> onToggleCalendar;
   final VoidCallback onShowAll;
   final Future<void> Function(String name, Color color) onCreateCalendar;
-  final Future<void> Function(String countryCode) onLoadHolidays;
+  final Future<bool> Function(String countryCode) onLoadHolidays;
 
   @override
   ConsumerState<_CalendarFilterSheet> createState() =>
@@ -181,7 +181,7 @@ class _CalendarFilterSheetState extends ConsumerState<_CalendarFilterSheet> {
 
 class _HolidaysTile extends StatefulWidget {
   const _HolidaysTile({required this.onLoadHolidays});
-  final Future<void> Function(String countryCode) onLoadHolidays;
+  final Future<bool> Function(String countryCode) onLoadHolidays;
 
   @override
   State<_HolidaysTile> createState() => _HolidaysTileState();
@@ -196,14 +196,38 @@ class _HolidaysTileState extends State<_HolidaysTile> {
       context: context,
       builder: (_) => const _CountryPickerDialog(),
     );
-    if (codes == null || codes.isEmpty) return;
+    if (codes == null || codes.isEmpty || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
     setState(() { _loading = true; _status = ''; });
+    final failed = <String>[];
     for (var i = 0; i < codes.length; i++) {
       if (!mounted) break;
       setState(() => _status = '${codes[i]} (${i + 1}/${codes.length})');
-      await widget.onLoadHolidays(codes[i]);
+      final ok = await widget.onLoadHolidays(codes[i]);
+      if (!ok) failed.add(codes[i]);
     }
     if (mounted) setState(() { _loading = false; _status = ''; });
+    final succeeded = codes.length - failed.length;
+    if (succeeded > 0) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Added holidays for $succeeded '
+            '${succeeded == 1 ? 'country' : 'countries'}.',
+          ),
+        ),
+      );
+    }
+    if (failed.isNotEmpty) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            "Couldn't load holidays for ${failed.join(', ')}. "
+            'Check your connection and try again.',
+          ),
+        ),
+      );
+    }
   }
 
   @override
