@@ -52,3 +52,8 @@ app.*.map.json
 # Release signing — never commit
 android/upload-keystore.jks
 android/key.properties
+
+# Local secrets / Vercel (e.g. GEMINI_API_KEY) — never commit
+.env
+.env*.local
+.vercel

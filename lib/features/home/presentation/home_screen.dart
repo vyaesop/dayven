@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../app/theme/app_theme.dart';
+import '../../../core/ai/ai_event_service.dart';
 import '../../../core/weather/weather_service.dart';
 import '../../../core/auth/firebase_auth_service.dart';
 import '../../account/application/local_account_controller.dart';
@@ -10,6 +11,7 @@ import '../../menu/presentation/planner_feature_screens.dart';
 import '../../preferences/application/app_preferences_controller.dart';
 import '../application/planner_controller.dart';
 import '../domain/planner_models.dart';
+import 'ai_capture_sheet.dart';
 import 'calendar_filter_sheet.dart';
 import 'event_detail_sheet.dart';
 import 'event_editor_sheet.dart';
@@ -115,6 +117,7 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
     );
     final accent = preferences.accentPalette.color;
     final tones = context.plannerTones;
+    final aiAvailable = ref.watch(aiCaptureAvailableProvider);
     final timelineSurfaceColor = _timelineSurfaceColor(
       context,
       preferences,
@@ -130,7 +133,8 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
           children: [
             _TimelineRail(
               monthLabel: state.monthLabel,
-              days: state.railDaysFor(preferences.daysAtAGlance),
+              days: state.railRangeDays(),
+              visibleCount: preferences.daysAtAGlance.clamp(3, 10),
               selectedDate: state.selectedDate,
               accent: accent,
               onDaySelected: controller.selectDate,
@@ -165,6 +169,22 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                         ),
                       ),
                       const Spacer(),
+                      if (aiAvailable) ...[
+                        IconButton(
+                          onPressed: () =>
+                              _openAiCaptureSheet(context, ref, state),
+                          tooltip: 'Add with AI',
+                          style: IconButton.styleFrom(
+                            backgroundColor: tones.surfaceRaised.withValues(
+                              alpha: 0.92,
+                            ),
+                            foregroundColor: accent,
+                            fixedSize: const Size(44, 44),
+                          ),
+                          icon: const Icon(Icons.auto_awesome_rounded),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
                       IconButton(
                         onPressed: controller.jumpToToday,
                         tooltip: 'Jump to today',
@@ -331,6 +351,13 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
                                                   ref,
                                                   state,
                                                 ),
+                                            onAddWithAi: aiAvailable
+                                                ? () => _openAiCaptureSheet(
+                                                      context,
+                                                      ref,
+                                                      state,
+                                                    )
+                                                : null,
                                           )
                                         : switch (layout) {
                                             _TimelineLayout.hourly =>
@@ -499,6 +526,36 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
     );
   }
 
+  /// AI quick-capture: describe an event in words, parse it via the backend,
+  /// then open the editor prefilled so the user reviews before it's saved.
+  Future<void> _openAiCaptureSheet(
+    BuildContext context,
+    WidgetRef ref,
+    PlannerState state,
+  ) async {
+    final defaultCalendarId = ref
+        .read(appPreferencesControllerProvider)
+        .asData
+        ?.value
+        .defaultCalendarId;
+    final draft = await showAiCaptureSheet(
+      context: context,
+      calendars: state.calendars,
+      selectedDate: state.selectedDate,
+      defaultCalendarId: defaultCalendarId,
+    );
+    if (draft == null || !context.mounted) return;
+    final controller = ref.read(plannerControllerProvider.notifier);
+    await showEventEditorSheet(
+      context: context,
+      selectedDate: state.selectedDate,
+      calendars: state.calendars,
+      defaultCalendarId: defaultCalendarId,
+      initialDraft: draft,
+      onCreate: controller.createEvent,
+    );
+  }
+
   Future<void> _openEditEventSheet(
     BuildContext context,
     WidgetRef ref,
@@ -544,10 +601,11 @@ class _HomeLoadedState extends ConsumerState<_HomeLoaded> {
   }
 }
 
-class _TimelineRail extends StatelessWidget {
+class _TimelineRail extends StatefulWidget {
   const _TimelineRail({
     required this.monthLabel,
     required this.days,
+    required this.visibleCount,
     required this.selectedDate,
     required this.accent,
     required this.onDaySelected,
@@ -555,9 +613,61 @@ class _TimelineRail extends StatelessWidget {
 
   final String monthLabel;
   final List<PlannerDay> days;
+
+  /// How many day chips fit in the rail at once. The chip height is sized so
+  /// this many fill the visible rail; the rest are reached by scrolling.
+  final int visibleCount;
   final DateTime selectedDate;
   final Color accent;
   final ValueChanged<DateTime> onDaySelected;
+
+  @override
+  State<_TimelineRail> createState() => _TimelineRailState();
+}
+
+class _TimelineRailState extends State<_TimelineRail> {
+  final ScrollController _scrollController = ScrollController();
+  double _itemExtent = 0;
+  double _viewportHeight = 0;
+
+  /// The selected day always sits in the middle of [days] (the range is built
+  /// centred on it), so centring on this index keeps the selection in view.
+  int get _selectedIndex => widget.days.length ~/ 2;
+
+  @override
+  void didUpdateWidget(covariant _TimelineRail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_sameDay(oldWidget.selectedDate, widget.selectedDate)) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _centerSelected(animate: true),
+      );
+    }
+  }
+
+  void _centerSelected({required bool animate}) {
+    if (!_scrollController.hasClients || _itemExtent <= 0) return;
+    final target = _selectedIndex * _itemExtent -
+        (_viewportHeight - _itemExtent) / 2;
+    final clamped = target.clamp(
+      _scrollController.position.minScrollExtent,
+      _scrollController.position.maxScrollExtent,
+    );
+    if (animate) {
+      _scrollController.animateTo(
+        clamped,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    } else {
+      _scrollController.jumpTo(clamped);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -582,50 +692,60 @@ class _TimelineRail extends StatelessWidget {
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Column(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          SizedBox(
-                            width: 18,
-                            child: Center(
-                              child: RotatedBox(
-                                quarterTurns: 3,
-                                child: Text(
-                                  monthLabel,
-                                  style: textTheme.labelLarge?.copyWith(
-                                    color: Color.lerp(
-                                      accent,
-                                      Colors.white,
-                                      0.18,
-                                    ),
-                                    letterSpacing: 1.5,
-                                  ),
-                                ),
+                    SizedBox(
+                      width: 18,
+                      child: Center(
+                        child: RotatedBox(
+                          quarterTurns: 3,
+                          child: Text(
+                            widget.monthLabel,
+                            style: textTheme.labelLarge?.copyWith(
+                              color: Color.lerp(
+                                widget.accent,
+                                Colors.white,
+                                0.18,
                               ),
+                              letterSpacing: 1.5,
                             ),
                           ),
-                          Expanded(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                for (final day in days)
-                                  _RailDayChip(
-                                    day: day,
-                                    isSelected: _sameDay(
-                                      day.date,
-                                      selectedDate,
-                                    ),
-                                    accent: accent,
-                                    onTap: () => onDaySelected(day.date),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final height = constraints.maxHeight;
+                          final extent = height / widget.visibleCount;
+                          final needsInitialCenter = _itemExtent == 0;
+                          _itemExtent = extent;
+                          _viewportHeight = height;
+                          if (needsInitialCenter) {
+                            WidgetsBinding.instance.addPostFrameCallback(
+                              (_) => _centerSelected(animate: false),
+                            );
+                          }
+                          return ListView.builder(
+                            controller: _scrollController,
+                            itemExtent: extent,
+                            itemCount: widget.days.length,
+                            padding: EdgeInsets.zero,
+                            itemBuilder: (context, index) {
+                              final day = widget.days[index];
+                              return _RailDayChip(
+                                day: day,
+                                isSelected: _sameDay(
+                                  day.date,
+                                  widget.selectedDate,
+                                ),
+                                accent: widget.accent,
+                                onTap: () => widget.onDaySelected(day.date),
+                              );
+                            },
+                          );
+                        },
                       ),
                     ),
                   ],
@@ -666,6 +786,7 @@ class _RailDayChip extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
             day.label,
@@ -1665,9 +1786,12 @@ class _PlannerMenu extends ConsumerWidget {
 }
 
 class _EmptyDayState extends StatelessWidget {
-  const _EmptyDayState({required this.onAddEvent});
+  const _EmptyDayState({required this.onAddEvent, this.onAddWithAi});
 
   final VoidCallback onAddEvent;
+
+  /// When non-null, offers an "Add with AI" shortcut alongside the manual one.
+  final VoidCallback? onAddWithAi;
 
   @override
   Widget build(BuildContext context) {
@@ -1705,6 +1829,17 @@ class _EmptyDayState extends StatelessWidget {
               icon: const Icon(Icons.add_rounded, size: 18),
               label: const Text('New event'),
             ),
+            if (onAddWithAi != null) ...[
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: onAddWithAi,
+                style: TextButton.styleFrom(
+                  foregroundColor: context.plannerAccent,
+                ),
+                icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                label: const Text('Add with AI'),
+              ),
+            ],
           ],
         ),
       ),

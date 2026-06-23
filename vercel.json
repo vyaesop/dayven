@@ -1,6 +1,7 @@
 {
   "buildCommand": "",
   "rewrites": [
+    { "source": "/v1/ai/parse-event", "destination": "/api/v1/ai/parse-event" },
     { "source": "/v1/auth/user",  "destination": "/api/v1/auth/user" },
     { "source": "/v1/events/:id", "destination": "/api/v1/events/[id]" },
     { "source": "/v1/events",     "destination": "/api/v1/events/index" },

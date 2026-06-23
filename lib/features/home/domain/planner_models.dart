@@ -872,6 +872,26 @@ class PlannerState {
     });
   }
 
+  /// A wide, scrollable run of days centred on [selectedDate]: [radius] days
+  /// reach back and forward from the selection (so the selected day sits in the
+  /// middle at index [radius]). Used by the scrollable rail, which shows only a
+  /// window of these at a time and lets the user scroll to the rest.
+  List<PlannerDay> railRangeDays({int radius = 45}) {
+    final safeRadius = radius.clamp(7, 180);
+    final today = _startOfDay(DateTime.now());
+    return List<PlannerDay>.generate(safeRadius * 2 + 1, (index) {
+      final date = _startOfDay(
+        selectedDate.add(Duration(days: index - safeRadius)),
+      );
+      return PlannerDay(
+        date: date,
+        label: DateFormat('EEE').format(date).toUpperCase(),
+        dayNumber: date.day,
+        isToday: date == today,
+      );
+    });
+  }
+
   String get monthLabel =>
       DateFormat('yyyy MMM').format(selectedDate).toUpperCase();
 

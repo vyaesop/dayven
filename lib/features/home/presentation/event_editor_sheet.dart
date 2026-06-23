@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_theme.dart';
@@ -20,6 +21,7 @@ Future<void> showEventEditorSheet({
       onEditSeriesFollowing,
   Future<void> Function(String seriesId, DateTime fromDate)? onTruncateSeries,
   PlannerEvent? initialEvent,
+  PlannerEventDraft? initialDraft,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -37,6 +39,7 @@ Future<void> showEventEditorSheet({
       onEditSeriesFollowing: onEditSeriesFollowing,
       onTruncateSeries: onTruncateSeries,
       initialEvent: initialEvent,
+      initialDraft: initialDraft,
     ),
   );
 }
@@ -54,6 +57,7 @@ class _EventEditorSheet extends StatefulWidget {
     this.onEditSeriesFollowing,
     this.onTruncateSeries,
     this.initialEvent,
+    this.initialDraft,
   });
 
   final DateTime selectedDate;
@@ -70,6 +74,10 @@ class _EventEditorSheet extends StatefulWidget {
   final Future<void> Function(String seriesId, DateTime fromDate)?
       onTruncateSeries;
   final PlannerEvent? initialEvent;
+
+  /// When creating (no [initialEvent]), prefills the form from this draft — used
+  /// by AI quick-capture so the parsed event opens for review before saving.
+  final PlannerEventDraft? initialDraft;
 
   @override
   State<_EventEditorSheet> createState() => _EventEditorSheetState();
@@ -96,51 +104,59 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
   void initState() {
     super.initState();
     final initialEvent = widget.initialEvent;
+    // A draft only seeds a *new* event; an explicit event always wins.
+    final draft = initialEvent == null ? widget.initialDraft : null;
 
-    _titleController = TextEditingController(text: initialEvent?.title ?? '');
+    _titleController =
+        TextEditingController(text: initialEvent?.title ?? draft?.title ?? '');
     _locationController = TextEditingController(
-      text: initialEvent?.location ?? '',
+      text: initialEvent?.location ?? draft?.location ?? '',
     );
-    _urlController = TextEditingController(text: initialEvent?.url ?? '');
-    _noteController = TextEditingController(text: initialEvent?.note ?? '');
+    _urlController =
+        TextEditingController(text: initialEvent?.url ?? draft?.url ?? '');
+    _noteController =
+        TextEditingController(text: initialEvent?.note ?? draft?.note ?? '');
     _attendeesController = TextEditingController(
-      text: initialEvent?.attendees.join(', ') ?? '',
+      text: (initialEvent?.attendees ?? draft?.attendees)?.join(', ') ?? '',
     );
-    _selectedDate = initialEvent == null
-        ? DateTime(
+
+    final seedStart = initialEvent?.startAt ?? draft?.startAt;
+    final seedEnd = initialEvent?.endAt ?? draft?.endAt;
+    _selectedDate = seedStart != null
+        ? DateTime(seedStart.year, seedStart.month, seedStart.day)
+        : DateTime(
             widget.selectedDate.year,
             widget.selectedDate.month,
             widget.selectedDate.day,
-          )
-        : DateTime(
-            initialEvent.startAt.year,
-            initialEvent.startAt.month,
-            initialEvent.startAt.day,
           );
-    _isAllDay = initialEvent?.isAllDay ?? false;
+    _isAllDay = initialEvent?.isAllDay ?? draft?.isAllDay ?? false;
     // For a brand-new event added to today, default to the next half-hour slot
     // so the common "add something soon" case needs no time edit. Other days
-    // default to a sensible 9:00 morning slot. Events are one hour by default.
+    // default to a sensible 9:00 morning slot. A seeded event/draft keeps its
+    // own time. Events are one hour by default.
     final now = DateTime.now();
-    final creatingForToday = initialEvent == null &&
+    final creatingFresh = seedStart == null;
+    final creatingForToday = creatingFresh &&
         _selectedDate.year == now.year &&
         _selectedDate.month == now.month &&
         _selectedDate.day == now.day;
-    final defaultStart = initialEvent?.startAt ??
+    final defaultStart = seedStart ??
         (creatingForToday
             ? _ceilToHalfHour(now)
             : DateTime(_selectedDate.year, _selectedDate.month,
                 _selectedDate.day, 9, 0));
     _startTime = TimeOfDay.fromDateTime(defaultStart);
     _endTime = TimeOfDay.fromDateTime(
-      initialEvent?.endAt ?? defaultStart.add(const Duration(hours: 1)),
+      seedEnd ?? defaultStart.add(const Duration(hours: 1)),
     );
-    _calendarId =
-        initialEvent?.calendarId ??
+    _calendarId = initialEvent?.calendarId ??
+        draft?.calendarId ??
         widget.defaultCalendarId ??
         widget.calendars.first.id;
-    _reminder = initialEvent?.reminder ?? PlannerReminder.none;
-    _recurrence = initialEvent?.effectiveRecurrence ?? PlannerRecurrence.none;
+    _reminder = initialEvent?.reminder ?? draft?.reminder ?? PlannerReminder.none;
+    _recurrence = initialEvent?.effectiveRecurrence ??
+        draft?.effectiveRecurrence ??
+        PlannerRecurrence.none;
   }
 
   /// Rounds [time] up to the next half-hour boundary (e.g. 14:05 -> 14:30,
@@ -236,9 +252,10 @@ class _EventEditorSheetState extends State<_EventEditorSheet> {
                     label: 'Title',
                     child: TextField(
                       controller: _titleController,
-                      // Open with the keyboard up on the title for new events so
-                      // the user can type and save in the fewest taps.
-                      autofocus: !_isEditing,
+                      // Open with the keyboard up on the title for blank new
+                      // events so the user can type and save in the fewest taps.
+                      // A prefilled (edit or AI) form stays calm for review.
+                      autofocus: !_isEditing && widget.initialDraft == null,
                       textCapitalization: TextCapitalization.sentences,
                       textInputAction: TextInputAction.done,
                       onSubmitted: (_) => _isSaving ? null : _handleSave(),
@@ -1237,6 +1254,42 @@ class _RepeatRuleSheetState extends State<_RepeatRuleSheet> {
       _selected == PlannerRepeatRule.weekly ||
       _selected == PlannerRepeatRule.biweekly;
 
+  // Weekday set for the "Weekdays" quick preset (Mon–Fri).
+  static const _weekdaySet = {
+    DateTime.monday,
+    DateTime.tuesday,
+    DateTime.wednesday,
+    DateTime.thursday,
+    DateTime.friday,
+  };
+
+  // ── Quick presets ──
+  // "Every 2 days" from a Monday lands on Mon, Wed, Fri…; "every 3 days" on
+  // Mon, Thu, Sun… — both are just daily rules with a step of 2 or 3.
+  bool get _isEvery2Days =>
+      _selected == PlannerRepeatRule.daily && _repeatEvery == 2;
+  bool get _isEvery3Days =>
+      _selected == PlannerRepeatRule.daily && _repeatEvery == 3;
+  bool get _isWeekdaysPreset =>
+      _selected == PlannerRepeatRule.weekly &&
+      _repeatEvery == 1 &&
+      setEquals(_weekdays, _weekdaySet);
+
+  void _applyDailyEvery(int interval) {
+    setState(() {
+      _selected = PlannerRepeatRule.daily;
+      _repeatEvery = interval;
+    });
+  }
+
+  void _applyWeekdaysPreset() {
+    setState(() {
+      _selected = PlannerRepeatRule.weekly;
+      _repeatEvery = 1;
+      _weekdays = {..._weekdaySet};
+    });
+  }
+
   // The interval stepper is hidden for the fixed "2 weeks" shortcut.
   bool get _showEveryStepper => _selected != PlannerRepeatRule.biweekly;
 
@@ -1353,6 +1406,31 @@ class _RepeatRuleSheetState extends State<_RepeatRuleSheet> {
                   },
                 ),
               ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _QuickPresetChip(
+                    label: 'Every 2 days',
+                    selected: _isEvery2Days,
+                    accentColor: accent,
+                    onTap: () => _applyDailyEvery(2),
+                  ),
+                  _QuickPresetChip(
+                    label: 'Every 3 days',
+                    selected: _isEvery3Days,
+                    accentColor: accent,
+                    onTap: () => _applyDailyEvery(3),
+                  ),
+                  _QuickPresetChip(
+                    label: 'Weekdays',
+                    selected: _isWeekdaysPreset,
+                    accentColor: accent,
+                    onTap: _applyWeekdaysPreset,
+                  ),
+                ],
+              ),
               if (_selected != PlannerRepeatRule.never) ...[
                 const SizedBox(height: 20),
                 Container(
@@ -1466,6 +1544,46 @@ class _RepeatRuleSheetState extends State<_RepeatRuleSheet> {
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A pill that one-tap applies a common recurrence (e.g. "Every 2 days").
+/// Highlights when the current rule already matches the preset.
+class _QuickPresetChip extends StatelessWidget {
+  const _QuickPresetChip({
+    required this.label,
+    required this.selected,
+    required this.accentColor,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final Color accentColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tones = context.plannerTones;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? accentColor : tones.surfaceRaised,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? accentColor : tones.line),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: selected ? context.onPlannerAccent : tones.ink,
+                fontWeight: FontWeight.w700,
+              ),
         ),
       ),
     );
