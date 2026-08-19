@@ -91,7 +91,7 @@ class HolidaysService {
     } catch (_) {}
 
     // Fetch the live list from Nager.Date. This is the AUTHORITATIVE set of
-    // countries that actually have holiday data — we must NOT union it with the
+    // countries that actually have holiday data - we must NOT union it with the
     // built-in fallback, or we'd offer countries the provider can't serve (e.g.
     // Ethiopia), whose holiday endpoint returns 204/empty so nothing appears.
     try {
@@ -125,7 +125,7 @@ class HolidaysService {
       debugPrint('HolidaysService: country list fetch failed: $e');
     }
 
-    // Offline fallback — the built-in supported list plus local countries.
+    // Offline fallback - the built-in supported list plus local countries.
     _countriesCache = _withBuiltIns(_fallbackCountries);
     return _countriesCache!;
   }
@@ -171,8 +171,8 @@ class HolidaysService {
 
     // NOTE: we intentionally do NOT mark the year as loaded here. The "loaded"
     // flag must only be set once the events have been durably persisted (see
-    // [markYearLoaded]); otherwise — e.g. in cloud-sync mode where saving is a
-    // no-op — the holidays would vanish on restart yet never be re-fetched.
+    // [markYearLoaded]); otherwise - e.g. in cloud-sync mode where saving is a
+    // no-op - the holidays would vanish on restart yet never be re-fetched.
     return (
       calendar: const PlannerCalendar(
         id: _calendarId,
@@ -263,7 +263,7 @@ class HolidaysService {
   // ── Fallback country list ────────────────────────────────────────────────────
   // The exact set of countries Nager.Date supports, used when the live call to
   // AvailableCountries fails. This must stay limited to countries the provider
-  // actually serves — listing unsupported ones (e.g. Ethiopia) only offers
+  // actually serves - listing unsupported ones (e.g. Ethiopia) only offers
   // choices whose holiday endpoint returns 204/empty, so nothing would appear.
   // Names are ASCII-normalised; the live list may show localised spellings.
   // Sourced from https://date.nager.at/api/v3/AvailableCountries.

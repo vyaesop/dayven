@@ -117,7 +117,7 @@ class _AiCaptureSheetState extends ConsumerState<_AiCaptureSheet> {
         return decoded['error'] as String;
       }
     } catch (_) {
-      // Not JSON — fall through.
+      // Not JSON - fall through.
     }
     return null;
   }

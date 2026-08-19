@@ -5,14 +5,14 @@ import '../calendars/ethiopian_calendar.dart';
 /// Nager.Date (our online holiday source) does not cover Ethiopia, so these are
 /// curated/computed in-app. There are three kinds:
 ///
-///  * **Fixed civil/solar holidays** — published every year on the same
+///  * **Fixed civil/solar holidays** - published every year on the same
 ///    Gregorian date (e.g. Adwa Victory Day, Ethiopian Christmas). The Ethiopian
 ///    Orthodox fixed feasts (Christmas Jan 7, Timkat Jan 19, New Year Sep 11,
 ///    Meskel Sep 27) track the Julian↔Gregorian offset, which is constant for
 ///    1900–2099, so they are emitted as fixed dates here.
-///  * **Movable Orthodox feasts** — Good Friday and Easter (Fasika) are computed
+///  * **Movable Orthodox feasts** - Good Friday and Easter (Fasika) are computed
 ///    from the Orthodox (Julian) Easter computus, so they are exact for any year.
-///  * **Movable Islamic holidays** — Eid al-Fitr, Eid al-Adha and Mawlid follow
+///  * **Movable Islamic holidays** - Eid al-Fitr, Eid al-Adha and Mawlid follow
 ///    the lunar Hijri calendar and depend on local moon sighting, so they cannot
 ///    be computed reliably. They are provided from a curated table for the years
 ///    below and may differ by a day from the officially announced date.

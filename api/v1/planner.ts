@@ -40,7 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const monthStart = new Date(Date.UTC(selected.getUTCFullYear(), selected.getUTCMonth(), 1));
 
     // Optional delta sync: when the client passes a `since` watermark we return
-    // only rows changed after it — including tombstoned rows so deletions made
+    // only rows changed after it - including tombstoned rows so deletions made
     // on other devices propagate. Without `since` we return the full live set
     // (tombstones excluded). The client loads once and then expands recurring
     // series + navigates months entirely in memory, so a month-bounded query

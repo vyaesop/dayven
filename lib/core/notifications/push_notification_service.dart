@@ -293,7 +293,7 @@ class PushNotificationService {
   int _eventNotificationId(String eventId) {
     // Deterministic positive int derived from the event id. We use FNV-1a rather
     // than String.hashCode because hashCode is not guaranteed stable across app
-    // restarts/builds — and the OS-scheduled notification id must match on a
+    // restarts/builds - and the OS-scheduled notification id must match on a
     // later launch for cancel/reschedule to work. The high bit is reserved to
     // keep these out of the range used by foreground FCM show() ids.
     var hash = 0x811c9dc5;
@@ -305,7 +305,7 @@ class PushNotificationService {
   }
 
   /// All-day events have no clock time, so anchor their reminders at this local
-  /// hour on the event day — otherwise "at time" would fire at midnight.
+  /// hour on the event day - otherwise "at time" would fire at midnight.
   static const int allDayReminderHour = 9;
 
   /// Pure, testable computation of when [event]'s reminder should fire, in local
@@ -484,7 +484,7 @@ class PushNotificationService {
     await _localNotifications.show(
       id: DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
       title: 'Dayven',
-      body: 'Test notification — channel and permissions are working.',
+      body: 'Test notification - channel and permissions are working.',
       notificationDetails: details,
     );
   }

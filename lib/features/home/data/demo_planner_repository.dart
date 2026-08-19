@@ -188,7 +188,7 @@ class DemoPlannerRepository implements PlannerRepository {
     }
     final existingIds = _events.map((e) => e.id).toSet();
     _events.addAll(events.where((e) => !existingIds.contains(e.id)));
-    // In-memory only — not durable across restarts, so the caller should keep
+    // In-memory only - not durable across restarts, so the caller should keep
     // re-fetching on each launch.
     return false;
   }

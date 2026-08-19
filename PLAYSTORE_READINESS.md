@@ -3,7 +3,7 @@ flutter run \
   --dart-define=VP_API_BASE_URL=https://vplanner.vercel.app \
   --dart-define=VP_API_BEARER_TOKEN=vp_556a13da512e4ec1828fa2b269370d9e
 
-# Play Store Readiness — Vertical Planner
+# Play Store Readiness - Vertical Planner
 > PM Analysis · Last updated: 2026-06-03
 
 ---
@@ -16,23 +16,23 @@ Auth, cloud sync, notifications, crash reporting, release signing, privacy polic
 
 ## Critical Blockers (App will be rejected or break user trust)
 
-- [x] **Release signing** — keystore generated (`android/upload-keystore.jks`), `build.gradle.kts` configured with `signingConfigs.release`. Both files gitignored. Credentials stored in `android/key.properties` (local only, never committed).
-- [x] **Privacy Policy / Terms of Service** — hosted on Vercel at `vplanner.vercel.app/privacy-policy.html` and `/terms.html`. Use these URLs in Play Store submission.
-- [x] **Auth** — Firebase Auth wired: email/password + Google Sign-In. Real sign-in/sign-up, password reset, token-based API auth.
-- [ ] **Subscription billing** — paywall **hidden from drawer for v1** to avoid policy violation. Implement RevenueCat before re-enabling.
-- [x] **Account deletion** — `DELETE /v1/auth/user` endpoint wipes NeonDB rows and deletes Firebase account. Flutter delete button calls it in cloud sync mode with confirmation dialog.
-- [x] **App icon variants** — generated with `flutter_launcher_icons` (all mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi + adaptive icon with charcoal `#35332E` background).
+- [x] **Release signing** - keystore generated (`android/upload-keystore.jks`), `build.gradle.kts` configured with `signingConfigs.release`. Both files gitignored. Credentials stored in `android/key.properties` (local only, never committed).
+- [x] **Privacy Policy / Terms of Service** - hosted on Vercel at `vplanner.vercel.app/privacy-policy.html` and `/terms.html`. Use these URLs in Play Store submission.
+- [x] **Auth** - Firebase Auth wired: email/password + Google Sign-In. Real sign-in/sign-up, password reset, token-based API auth.
+- [ ] **Subscription billing** - paywall **hidden from drawer for v1** to avoid policy violation. Implement RevenueCat before re-enabling.
+- [x] **Account deletion** - `DELETE /v1/auth/user` endpoint wipes NeonDB rows and deletes Firebase account. Flutter delete button calls it in cloud sync mode with confirmation dialog.
+- [x] **App icon variants** - generated with `flutter_launcher_icons` (all mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi + adaptive icon with charcoal `#35332E` background).
 
 ---
 
 ## High-Priority Issues (Will hurt ratings and retention)
 
-- [x] **"Sync Across Devices" mode** — Vercel + NeonDB backend live at `vplanner.vercel.app`. Full CRUD wired. Auth gating still needed for multi-user production use.
-- [x] **Notifications** — `scheduleEventReminder` / `cancelEventReminder` wired in `planner_controller.dart` at create, update, delete, and cold-start reschedule.
-- [ ] **Smart Alerts are UI-only** — toggles persist but weather delivery and push scheduling need v1.1 integration. **Coming Soon banner added** to the screen.
-- [ ] **Travel section is UI-only** — preferences persist but live directions/time-to-leave need map integration in v1.1. **Coming Soon banner added** to the screen.
-- [x] **Empty states** — `_EmptyDayState` in `home_screen.dart` covers the timeline; search falls back to "No matches" row.
-- [x] **Error states** — `_HomeError` in `home_screen.dart` shows the error with a **Retry button** that invalidates the provider.
+- [x] **"Sync Across Devices" mode** - Vercel + NeonDB backend live at `vplanner.vercel.app`. Full CRUD wired. Auth gating still needed for multi-user production use.
+- [x] **Notifications** - `scheduleEventReminder` / `cancelEventReminder` wired in `planner_controller.dart` at create, update, delete, and cold-start reschedule.
+- [ ] **Smart Alerts are UI-only** - toggles persist but weather delivery and push scheduling need v1.1 integration. **Coming Soon banner added** to the screen.
+- [ ] **Travel section is UI-only** - preferences persist but live directions/time-to-leave need map integration in v1.1. **Coming Soon banner added** to the screen.
+- [x] **Empty states** - `_EmptyDayState` in `home_screen.dart` covers the timeline; search falls back to "No matches" row.
+- [x] **Error states** - `_HomeError` in `home_screen.dart` shows the error with a **Retry button** that invalidates the provider.
 
 ---
 
@@ -56,7 +56,7 @@ Auth, cloud sync, notifications, crash reporting, release signing, privacy polic
 |---|---|
 | Vertical timeline / day view | Ready |
 | Month overview with heatmap | Ready |
-| Event CRUD — local SQLite | Ready |
+| Event CRUD - local SQLite | Ready |
 | Calendar filtering + colors | Ready |
 | Theme system (4 modes, 27 palettes) | Ready |
 | Text scaling | Ready |
@@ -93,25 +93,25 @@ Auth, cloud sync, notifications, crash reporting, release signing, privacy polic
 
 ## Recommended Launch Phases
 
-### Phase 1 — Internal Testing (Week 1–2)
-- [x] Release signing — keystore + `build.gradle.kts` configured
-- [x] App icon variants — all densities + adaptive (charcoal background)
-- [x] Privacy policy + ToS — live at `vplanner.vercel.app/privacy-policy.html` and `/terms.html`
+### Phase 1 - Internal Testing (Week 1–2)
+- [x] Release signing - keystore + `build.gradle.kts` configured
+- [x] App icon variants - all densities + adaptive (charcoal background)
+- [x] Privacy policy + ToS - live at `vplanner.vercel.app/privacy-policy.html` and `/terms.html`
 - [x] Wire notification scheduling at event save time
 - [x] Smart Alerts and Travel show "Coming Soon" banners
-- [x] Cloud sync live — Vercel + NeonDB + Firebase Auth
-- [x] Firebase Auth wired — email/password + Google Sign-In
-- [x] Account deletion — full wipe (NeonDB + Firebase) with confirmation dialog
+- [x] Cloud sync live - Vercel + NeonDB + Firebase Auth
+- [x] Firebase Auth wired - email/password + Google Sign-In
+- [x] Account deletion - full wipe (NeonDB + Firebase) with confirmation dialog
 - [x] Firebase Crashlytics wired
-- [ ] **Decide: free launch for v1 vs. RevenueCat** — paywall currently hidden
+- [ ] **Decide: free launch for v1 vs. RevenueCat** - paywall currently hidden
 - [x] Empty states for timeline and search results
 
-### Phase 2 — Closed Testing (Week 3–4)
+### Phase 2 - Closed Testing (Week 3–4)
 - [ ] Recruit 20–50 testers via Play Store internal/closed track
 - [ ] Monitor: onboarding drop-off, crash rate, most-used features
 - [ ] Fix anything surfaced from real usage
 
-### Phase 3 — Open Testing / Production
+### Phase 3 - Open Testing / Production
 - [ ] Only after auth is real (if offering accounts)
 - [ ] Only after billing is wired (if showing paywall)
 - [ ] Weather + maps integration (v1.1 target)
@@ -140,8 +140,8 @@ Auth, cloud sync, notifications, crash reporting, release signing, privacy polic
 **Gap you fill:** No polished Timepage-equivalent exists on Android. The vertical timeline + accent palette system is a genuine differentiator.
 
 **Risks:**
-- Fantastical (Android) — well-funded, established
-- Structured — growing fast in same aesthetic niche
+- Fantastical (Android) - well-funded, established
+- Structured - growing fast in same aesthetic niche
 - Google Calendar improving with Material You
 
 **Target user:** Power users who find Google Calendar cluttered. Likely overlaps with Notion users, iOS Timepage users who switched to Android, productivity enthusiasts.
@@ -150,9 +150,9 @@ Auth, cloud sync, notifications, crash reporting, release signing, privacy polic
 
 ## Technical Debt to Track
 
-- [ ] No unit tests — no widget tests — no integration tests
+- [ ] No unit tests - no widget tests - no integration tests
 - [ ] No CI/CD pipeline
-- [x] Crash reporting — Firebase Crashlytics wired in `main.dart` (Flutter + platform errors)
+- [x] Crash reporting - Firebase Crashlytics wired in `main.dart` (Flutter + platform errors)
 - [ ] No analytics events wired
 - [ ] Recurring event editing (single instance vs. all future) not implemented
 - [ ] Sync conflict resolution not designed
@@ -166,8 +166,8 @@ Auth, cloud sync, notifications, crash reporting, release signing, privacy polic
 - [ ] Release signing keystore
 - [ ] App icon variants
 - [ ] Privacy policy (use a generator, host on GitHub Pages)
-- [x] Smart Alerts and Travel — "Coming Soon" banners added (v1.1 scope)
-- [x] Cloud sync live — Vercel + NeonDB backend wired end-to-end
+- [x] Smart Alerts and Travel - "Coming Soon" banners added (v1.1 scope)
+- [x] Cloud sync live - Vercel + NeonDB backend wired end-to-end
 - [x] `flutter_local_notifications` scheduling wired at event save/update/delete
 - [x] Empty state widget on home timeline (`_EmptyDayState`)
 - [x] Retry button on error state (`_HomeError`)

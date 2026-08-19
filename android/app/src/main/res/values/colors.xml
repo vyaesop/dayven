@@ -2,7 +2,7 @@
 <resources>
     <!-- Parchment background that sits behind the adaptive icon foreground. -->
     <color name="ic_launcher_background">#35332E</color>
-    <!-- Splash background — matches the app's Mono scaffold so launch -> first frame doesn't flash. -->
+    <!-- Splash background - matches the app's Mono scaffold so launch -> first frame doesn't flash. -->
     <color name="launch_background">#F9F8F4</color>
     <!-- Splash background for dark mode launches. -->
     <color name="launch_background_dark">#1E1C18</color>

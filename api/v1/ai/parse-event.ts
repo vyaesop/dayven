@@ -3,14 +3,14 @@ import {
   type VercelRequest, type VercelResponse,
 } from '../../_shared';
 
-// Allowed reminder tokens — mirror PlannerReminder.storageValue on the client.
+// Allowed reminder tokens - mirror PlannerReminder.storageValue on the client.
 const REMINDER_TOKENS = [
   'none', 'at_time', '5_min_before', '10_min_before', '15_min_before',
   '30_min_before', '1_hour_before', '2_hours_before', '1_day_before',
   '1_week_before',
 ];
 
-// Allowed recurrence frequencies — mirror PlannerRepeatRule.storageValue.
+// Allowed recurrence frequencies - mirror PlannerRepeatRule.storageValue.
 const FREQUENCIES = ['never', 'daily', 'weekly', 'biweekly', 'monthly', 'yearly'];
 
 // Gemini structured-output schema (OpenAPI subset; types are UPPERCASE).
@@ -78,7 +78,7 @@ function buildSystemPrompt(body: Record<string, unknown>): string {
   const offset = typeof body.utc_offset_minutes === 'number' ? body.utc_offset_minutes : 0;
   const calendars = readCalendars(body.calendars);
   const calLines = calendars.length
-    ? calendars.map((c) => `- ${c.id} — ${c.name}`).join('\n')
+    ? calendars.map((c) => `- ${c.id} - ${c.name}`).join('\n')
     : '- (none provided)';
 
   return [
@@ -92,7 +92,7 @@ function buildSystemPrompt(body: Record<string, unknown>): string {
     'Rules:',
     '- "start" and "end" are local wall-clock times formatted "YYYY-MM-DDTHH:mm:ss" with NO timezone suffix.',
     '- If only a start time is given, make the event 1 hour long. Honor an explicit end time or duration.',
-    '- If a day is given with no time, set isAllDay=false and default to 09:00 for 1 hour — unless it clearly reads as an all-day thing (a holiday, a birthday, a full-day trip), then isAllDay=true with 00:00 times.',
+    '- If a day is given with no time, set isAllDay=false and default to 09:00 for 1 hour - unless it clearly reads as an all-day thing (a holiday, a birthday, a full-day trip), then isAllDay=true with 00:00 times.',
     '- If no date is implied at all, use today.',
     '- Choose calendarId from the list above by meaning (a work meeting → a work calendar, a run → exercise, dinner with friends → friends or family). If genuinely unsure, set calendarId to null.',
     '- Set "reminder" only when the user asks for one ("remind me 30 min before" → "30_min_before"); otherwise "none". Use the closest allowed token.',
@@ -129,7 +129,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       generationConfig: {
         temperature: 0.2,
         maxOutputTokens: 1024,
-        // This is a fast, deterministic extraction — turn off 2.5's "thinking"
+        // This is a fast, deterministic extraction - turn off 2.5's "thinking"
         // so it doesn't consume the output budget (which truncates the JSON)
         // and stays cheap. Ignored by models without a thinking mode.
         thinkingConfig: { thinkingBudget: 0 },

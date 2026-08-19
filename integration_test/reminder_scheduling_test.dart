@@ -10,7 +10,7 @@ void main() {
   final svc = PushNotificationService.instance;
 
   setUpAll(() async {
-    // Initialize the service end-to-end — this initialises timezone db,
+    // Initialize the service end-to-end - this initialises timezone db,
     // creates the Android channel, and requests POST_NOTIFICATIONS.
     await svc.initialize();
     // Clear any reminders left over from previous app runs / tests.

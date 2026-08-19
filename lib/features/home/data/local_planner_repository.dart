@@ -40,7 +40,7 @@ class LocalPlannerRepository implements PlannerRepository {
           ? _calendars.map((c) => c.id).toList()
           : List.of(cached.visibleCalendarIds);
     } else {
-      // First run: seed calendars only — never any sample events.
+      // First run: seed calendars only - never any sample events.
       _calendars = List.of(_defaultCalendars);
       _events = [];
       _visibleIds = _calendars.map((c) => c.id).toList();

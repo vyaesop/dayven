@@ -356,7 +356,7 @@ class PlannerRecurrence {
   /// times" limit) iteration fast-forwards to near [rangeStart] so a very old
   /// anchor (e.g. a daily event created years ago) doesn't exhaust the safety
   /// cap before reaching the requested window. It never affects which dates are
-  /// produced — only how far ahead iteration begins. "After N times" rules are
+  /// produced - only how far ahead iteration begins. "After N times" rules are
   /// not fast-forwarded because every occurrence must be counted from the
   /// anchor (and such rules are already bounded by [count]).
   Iterable<DateTime> occurrenceDates(
@@ -376,7 +376,7 @@ class PlannerRecurrence {
 
     // Fast-forwarding is only safe when we don't need to count occurrences from
     // the anchor. We deliberately under-skip (truncating division) so we never
-    // jump past a real occurrence — at worst a few extra iterations run.
+    // jump past a real occurrence - at worst a few extra iterations run.
     final canSkip = endMode != RecurrenceEndMode.afterCount;
     final lowerBound = (rangeStart != null &&
             rangeStart.isAfter(anchor))

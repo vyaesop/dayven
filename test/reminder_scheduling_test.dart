@@ -95,7 +95,7 @@ void main() {
         recurrence: const PlannerRecurrence(frequency: PlannerRepeatRule.daily),
       );
       // "Now" is mid-June; the next daily occurrence is the same day at 09:00
-      // (now is before 09:00) — keeps the same wall-clock hour regardless of
+      // (now is before 09:00) - keeps the same wall-clock hour regardless of
       // how far the anchor is in the past.
       final fire = PushNotificationService.reminderFireTime(
           e, DateTime(2026, 6, 15, 7));

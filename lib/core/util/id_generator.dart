@@ -5,7 +5,7 @@ import 'dart:math';
 /// In the cloud-only, offline-first model the client owns the primary key for
 /// every event and calendar it creates. This lets a create performed while
 /// offline carry a stable id that the backend later accepts via an idempotent
-/// upsert — no server round-trip is needed to mint the id, and replaying a
+/// upsert - no server round-trip is needed to mint the id, and replaying a
 /// queued create is naturally idempotent.
 class IdGenerator {
   IdGenerator._();

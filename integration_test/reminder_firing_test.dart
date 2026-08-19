@@ -40,7 +40,7 @@ void main() {
       reason: 'Reminder must be queued before fire time',
     );
 
-    // Wait past the scheduled time. Inexact alarms can slip — give it room.
+    // Wait past the scheduled time. Inexact alarms can slip - give it room.
     await Future<void>.delayed(const Duration(seconds: 30));
 
     final after = await svc.pendingScheduledReminders();

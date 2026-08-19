@@ -50,7 +50,7 @@ class FirebaseAuthService {
       return await _auth.signInWithCredential(credential);
     } on PlatformException catch (e) {
       // google_sign_in surfaces native failures here. The most common is
-      // ApiException: 10 (DEVELOPER_ERROR) — the signing key's SHA-1 isn't
+      // ApiException: 10 (DEVELOPER_ERROR) - the signing key's SHA-1 isn't
       // registered in the Firebase console for this package name.
       debugPrint('Google sign-in PlatformException: '
           'code=${e.code} message=${e.message} details=${e.details}');

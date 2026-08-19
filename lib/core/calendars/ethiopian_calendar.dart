@@ -2,7 +2,7 @@
 /// calendars, via the Julian Day Number (JDN).
 ///
 /// The Ethiopian calendar has 12 months of 30 days plus a 13th month, Pagumē,
-/// of 5 days (6 in a leap year — every year where `year % 4 == 3`). Its New Year
+/// of 5 days (6 in a leap year - every year where `year % 4 == 3`). Its New Year
 /// (Meskerem 1) lands on Gregorian Sep 11, or Sep 12 in the year before a
 /// Gregorian leap year; this conversion handles that shift automatically because
 /// it works purely in JDN space.

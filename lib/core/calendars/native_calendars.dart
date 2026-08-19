@@ -25,7 +25,7 @@ int gregorianToJdn(int y, int m, int d) {
 // ─── Hijri (tabular / civil Islamic) ─────────────────────────────────────────
 
 /// Tabular ("civil", Kuwaiti algorithm) Islamic calendar. This is an arithmetic
-/// approximation — it can differ from observed/Umm al-Qura dates by ±1 day — but
+/// approximation - it can differ from observed/Umm al-Qura dates by ±1 day - but
 /// it is deterministic and standard for civil display.
 class HijriDate {
   const HijriDate(this.year, this.month, this.day);

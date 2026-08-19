@@ -76,7 +76,7 @@ class PlannerController extends AsyncNotifier<PlannerState> {
     return initial;
   }
 
-  /// Ensures public holidays are loaded for [year] — for the device-locale
+  /// Ensures public holidays are loaded for [year] - for the device-locale
   /// country and for any country the user has already loaded in the current
   /// year. Safe to call repeatedly; it dedupes per session and per-year.
   Future<void> _ensureHolidaysForYear(
@@ -114,7 +114,7 @@ class PlannerController extends AsyncNotifier<PlannerState> {
 
     // Persist so the holidays survive app restarts (the previous behaviour only
     // updated in-memory state, so they vanished on the next launch). Only mark
-    // the year as loaded once persistence actually succeeded — otherwise (e.g.
+    // the year as loaded once persistence actually succeeded - otherwise (e.g.
     // cloud-sync, which holds them in memory only) we re-fetch next launch.
     final persisted = await _repository.saveHolidays(calendar, events);
     if (persisted) {

@@ -22,7 +22,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     await sql`DELETE FROM calendars WHERE user_id = ${uid}`;
 
     // Delete Firebase account via the Identity Toolkit REST API.
-    // Uses the user's own ID token — no service account required.
+    // Uses the user's own ID token - no service account required.
     const apiKey = process.env.FIREBASE_WEB_API_KEY;
     if (apiKey) {
       await fetch(

@@ -7,7 +7,7 @@ import '../network/api_client.dart';
 import '../network/api_exception.dart';
 
 /// Whether AI quick-capture can be offered. It needs the cloud backend that
-/// proxies the model call — the API key lives only on the server, never in the
+/// proxies the model call - the API key lives only on the server, never in the
 /// app, so without a remote backend there's nothing to call.
 final aiCaptureAvailableProvider = Provider<bool>((ref) {
   return ref.watch(appConfigProvider).hasRemoteBackend;
@@ -20,7 +20,7 @@ final aiEventServiceProvider = Provider<AiEventService>((ref) {
 /// Turns a plain-language description ("lunch with Sara Thu 1pm at Café Lima,
 /// remind me 30 min before") into a reviewable [PlannerEventDraft].
 ///
-/// The model is never called from the client — this posts to the backend
+/// The model is never called from the client - this posts to the backend
 /// `/v1/ai/parse-event` proxy (Firebase-auth-gated, key held server-side) and
 /// maps the normalized JSON it returns onto the same draft the editor builds.
 class AiEventService {

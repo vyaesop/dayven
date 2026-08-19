@@ -75,7 +75,7 @@ class _EventEditorSheet extends StatefulWidget {
       onTruncateSeries;
   final PlannerEvent? initialEvent;
 
-  /// When creating (no [initialEvent]), prefills the form from this draft — used
+  /// When creating (no [initialEvent]), prefills the form from this draft - used
   /// by AI quick-capture so the parsed event opens for review before saving.
   final PlannerEventDraft? initialDraft;
 
@@ -1265,7 +1265,7 @@ class _RepeatRuleSheetState extends State<_RepeatRuleSheet> {
 
   // ── Quick presets ──
   // "Every 2 days" from a Monday lands on Mon, Wed, Fri…; "every 3 days" on
-  // Mon, Thu, Sun… — both are just daily rules with a step of 2 or 3.
+  // Mon, Thu, Sun… - both are just daily rules with a step of 2 or 3.
   bool get _isEvery2Days =>
       _selected == PlannerRepeatRule.daily && _repeatEvery == 2;
   bool get _isEvery3Days =>

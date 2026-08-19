@@ -8,7 +8,7 @@ import '../../../core/auth/firebase_auth_service.dart';
 
 /// First-run gate for the cloud-only planner: the user must sign in (or create
 /// an account) so their planner can sync. Once authenticated, Firebase persists
-/// the session — including offline — so this screen is only seen once.
+/// the session - including offline - so this screen is only seen once.
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -98,9 +98,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   String _friendly(String code) {
     switch (code) {
       case 'email-already-in-use':
-        return 'Already registered — try signing in.';
+        return 'Already registered - try signing in.';
       case 'user-not-found':
-        return 'No account found — try signing up.';
+        return 'No account found - try signing up.';
       case 'wrong-password':
       case 'invalid-credential':
         return 'Incorrect email or password.';

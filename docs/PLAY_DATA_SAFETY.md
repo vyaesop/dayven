@@ -1,4 +1,4 @@
-# Dayven — Google Play Data Safety mapping
+# Dayven - Google Play Data Safety mapping
 
 This document maps Dayven's actual data handling to the Google Play **Data
 Safety** form so the store listing is accurate. Keep it in sync with the code
@@ -46,7 +46,7 @@ out. If the server is unreachable the client aborts and tells the user, so they
 are never told their cloud data was deleted when it was not.
 
 - **In-app deletion path:** present and functional.
-- **Web/off-device deletion URL (Play also wants this):** TODO — host a public
+- **Web/off-device deletion URL (Play also wants this):** TODO - host a public
   page describing the deletion process and a contact/web route, then add its URL
   to the Play Console "Data deletion" field. (Privacy policy is at
   `public/privacy-policy.html`; ensure it is publicly hosted and linked.)

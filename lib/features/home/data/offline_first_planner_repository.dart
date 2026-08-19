@@ -55,7 +55,7 @@ class OfflineFirstPlannerRepository implements PlannerRepository {
   }
 
   /// Flush any queued mutations and pull the latest snapshot. Silently tolerates
-  /// being offline — the cache already backs the UI.
+  /// being offline - the cache already backs the UI.
   Future<void> _trySync() async {
     try {
       await _flushQueue();
@@ -285,7 +285,7 @@ class OfflineFirstPlannerRepository implements PlannerRepository {
     // Holidays are a local convenience and are not synced to the cloud (there
     // is no bulk-import endpoint). Unlike the old cloud repo, we now persist
     // them to the durable cache, so they survive restarts and need not be
-    // re-fetched — hence we report `true`.
+    // re-fetched - hence we report `true`.
     if (!_calendars.any((c) => c.id == calendar.id)) {
       _calendars = [..._calendars, calendar];
       if (!_visibleIds.contains(calendar.id)) {

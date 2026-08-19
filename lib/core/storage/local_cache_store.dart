@@ -26,7 +26,7 @@ class LocalCacheStore {
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
       return PlannerCacheSnapshot.fromJson(decoded);
     } catch (_) {
-      // Corrupt cache — drop it rather than crash on launch.
+      // Corrupt cache - drop it rather than crash on launch.
       await prefs.remove(_key);
       return null;
     }

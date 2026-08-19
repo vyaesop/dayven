@@ -168,7 +168,7 @@ class _FeatureScaffold extends ConsumerWidget {
         AppPreferences.defaults();
     final accent = preferences.accentPalette.color;
     // Settings panels live on a darkened version of the active surface so the
-    // user gets a consistent "drawer-like" feel even in light themes — matching
+    // user gets a consistent "drawer-like" feel even in light themes - matching
     // the design where the chrome around setting groups is always a
     // dim charcoal regardless of mode, with subtle tonal shifts.
     final background = switch (preferences.themeMode) {
@@ -830,7 +830,7 @@ class _AccentNeighborStrip extends StatelessWidget {
 
 /// A semi-deterministic scatter of bubbles around the active accent. We use a
 /// stable seed (the palette's enum index) so the cluster never reshuffles
-/// between rebuilds — the user sees the same layout each time, just with the
+/// between rebuilds - the user sees the same layout each time, just with the
 /// center bubble swapping color when they pick a new accent.
 class _ScatterBubbleCluster extends StatelessWidget {
   const _ScatterBubbleCluster({
@@ -1145,7 +1145,7 @@ class _SmartAlertsSurface extends ConsumerWidget {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text(
-                                'Token not ready yet — reopen this screen in a moment',
+                                'Token not ready yet - reopen this screen in a moment',
                               ),
                             ),
                           );
@@ -1477,7 +1477,7 @@ class _AccountSurface extends ConsumerWidget {
         const _SettingsGroup(
           title: 'Plan',
           children: [
-            _InfoRow(title: 'Plan', value: 'Free — all features included'),
+            _InfoRow(title: 'Plan', value: 'Free - all features included'),
           ],
         ),
         _PrimaryAction(
@@ -1544,7 +1544,7 @@ class _AccountSurface extends ConsumerWidget {
                   }
                   return;
                 }
-                // Server data is gone — clear the on-device mirror and queue.
+                // Server data is gone - clear the on-device mirror and queue.
                 await LocalCacheStore(userId: user.uid).clear();
                 await MutationQueue(userId: user.uid).clear();
                 await ref.read(firebaseAuthServiceProvider).signOut();
@@ -1740,7 +1740,7 @@ class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
     final firebaseUser = ref.watch(firebaseUserProvider).asData?.value;
     final panelTheme = _lightPanelTheme(context);
 
-    // Already signed in — show signed-in state
+    // Already signed in - show signed-in state
     if (firebaseUser != null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1787,7 +1787,7 @@ class _SignInSurfaceState extends ConsumerState<_SignInSurface> {
               Text(
                 _isSignUp
                     ? 'Your events sync across devices via the cloud.'
-                    : 'Welcome back — sign in to access your planner.',
+                    : 'Welcome back - sign in to access your planner.',
                 style: panelTheme.textTheme.bodyMedium,
               ),
               const SizedBox(height: 18),
@@ -1933,7 +1933,7 @@ class _SupportSurfaceState extends ConsumerState<_SupportSurface> {
   static const _faqItems = [
     (
       'What can I do with the local plan?',
-      'Create unlimited events, calendars and reminders — all stored on your device.',
+      'Create unlimited events, calendars and reminders - all stored on your device.',
     ),
     (
       'How do I add people to an event?',
@@ -1941,7 +1941,7 @@ class _SupportSurfaceState extends ConsumerState<_SupportSurface> {
     ),
     (
       'Can I sync across devices?',
-      'Cloud sync is coming in v1.0 — select the Cloud Sync storage mode when prompted.',
+      'Cloud sync is coming in v1.0 - select the Cloud Sync storage mode when prompted.',
     ),
     (
       'How do I change my theme?',
@@ -2527,7 +2527,7 @@ class _WhatsNewSurface extends StatelessWidget {
       children: [
         const _HeroPanel(
           title: "What's new in Dayven",
-          body: 'Local-first planner — every feature works fully offline.',
+          body: 'Local-first planner - every feature works fully offline.',
           icon: Icons.new_releases_rounded,
           iconColor: AppColors.gold,
         ),
@@ -2741,7 +2741,7 @@ class _AppIconSurface extends ConsumerWidget {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
-                        '${entry.$1} icon preview — live switching requires a production build.',
+                        '${entry.$1} icon preview - live switching requires a production build.',
                       ),
                     ),
                   );
@@ -3512,7 +3512,7 @@ class _RedeemCodeCardState extends State<_RedeemCodeCard> {
                   SnackBar(
                     content: Text(
                       success
-                          ? 'Code redeemed — premium preview active.'
+                          ? 'Code redeemed - premium preview active.'
                           : 'That code could not be redeemed.',
                     ),
                   ),
@@ -3650,7 +3650,7 @@ class _WelcomeSurfaceState extends State<_WelcomeSurface> {
       iconColor: AppColors.lilac,
       title: 'Dual Calendars',
       body:
-          'Show a second date alongside the Gregorian one — Ethiopian, Hijri, '
+          'Show a second date alongside the Gregorian one - Ethiopian, Hijri, '
           'Hebrew, Persian, or Buddhist. Turn it on in Preferences.',
     ),
   ];

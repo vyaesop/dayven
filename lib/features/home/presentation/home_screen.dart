@@ -1311,7 +1311,7 @@ class _HourlyTimeline extends StatelessWidget {
               Column(
                 children: [for (final hour in hours) _HourGridRow(hour: hour)],
               ),
-              // Duration bars — one per timed event, spans start→end
+              // Duration bars - one per timed event, spans start→end
               for (final e in timedEvents)
                 if (!colorCard)
                   Positioned(
@@ -1638,8 +1638,8 @@ class _PlannerMenu extends ConsumerWidget {
       PlannerMenuDestination.help,
       PlannerMenuDestination.account,
       // Hidden for v1 (non-functional scaffolds / no billing):
-      //   rsvp, smartAlerts, travel — feature stubs with no backend
-      //   paywall — billing deferred; ships free
+      //   rsvp, smartAlerts, travel - feature stubs with no backend
+      //   paywall - billing deferred; ships free
     ];
 
     return Drawer(
